@@ -1,0 +1,33 @@
+[project]
+name = "minio-operator-ext"
+version = "0.0.0"
+dependencies = [
+    "click",
+    "kopf",
+    "kubernetes",
+    "minio",
+    "pydantic",
+    "python-dotenv",
+    "uvloop"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio"
+]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+log_cli = true
+log_cli_level = "DEBUG"
+asyncio_mode = "auto"
+testpaths = [
+    "tests"
+]
+
+[project.scripts]
+minio-operator-ext = "minio_operator_ext.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["minio_operator_ext"]

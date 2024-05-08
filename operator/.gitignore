@@ -1,0 +1,8 @@
+# Standard python files
+*.egg-info
+__pycache__
+.pytest_cache
+
+# Project specific files
+/*.py
+!/setup.py

@@ -1,0 +1,50 @@
+{
+  "folders": [
+    {
+      "name": "operator",
+      "path": "/workspaces/minio-operator-ext/operator"
+    },
+    {
+      "name": "root",
+      "path": "/workspaces/minio-operator-ext"
+    }
+  ],
+  "settings": {
+    "editor.codeActionsOnSave": [
+      "source.organizeImports",
+      "source.formatDocument"
+    ],
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "[python]": {
+      "editor.defaultFormatter": "ms-python.black-formatter"
+    },
+    "isort.args": ["--profile", "black", "--project", "letmein"],
+    "python.defaultInterpreterPath": "/asdf/installs/python/3.10.12/bin/python3",
+    "typescript.tsdk": "${workspaceFolder:frontend}/node_modules/typescript/lib",
+    "remote.localPortHost": "allInterfaces"
+  },
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Python: Debug Tests",
+        "type": "debugpy",
+        "request": "launch",
+        "program": "${file}",
+        "purpose": ["debug-test"],
+        "console": "integratedTerminal",
+        "justMyCode": false
+      },
+      {
+        "name": "Python: test.py",
+        "type": "debugpy",
+        "request": "launch",
+        "program": "${workspaceFolder:operator}/test.py",
+        "cwd": "${workspaceFolder:operator}",
+        "purpose": ["debug-test"],
+        "console": "integratedTerminal",
+        "justMyCode": false
+      }
+    ]
+  }
+}

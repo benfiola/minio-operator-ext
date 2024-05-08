@@ -1,0 +1,17 @@
+{
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "postCreateCommand": ".devcontainer/post-create.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "esbenp.prettier-vscode",
+        "rohit-gohri.format-code-action",
+        "ms-python.black-formatter",
+        "ms-python.isort",
+        "ms-python.python"
+      ]
+    }
+  }
+}

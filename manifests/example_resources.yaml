@@ -1,0 +1,50 @@
+apiVersion: bfiola.dev/v1
+kind: MinioBucket
+metadata:
+  name: test
+spec:
+  name: test
+  tenant: minio-23b8d64e/minio
+---
+apiVersion: bfiola.dev/v1
+kind: MinioUser
+metadata:
+  name: test
+spec:
+  accessKey: test
+  secretKey: password
+  tenant: minio-23b8d64e/minio
+---
+apiVersion: bfiola.dev/v1
+kind: MinioPolicy
+metadata:
+  name: test
+spec:
+  name: test
+  tenant: minio-23b8d64e/minio
+  statement:
+    - effect: "Allow"
+      action:
+        - "s3:AbortMultipartUpload"
+        - "s3:DeleteObject"
+        - "s3:ListMultipartUploadParts"
+        - "s3:PutObject"
+        - "s3:GetObject"
+      resource:
+        - "arn:aws:s3:::test/*"
+    - effect: "Allow"
+      action:
+        - "s3:GetBucketLocation"
+        - "s3:ListBucket"
+        - "s3:ListBucketMultipartUploads"
+      resource:
+        - "arn:aws:s3:::test"
+---
+apiVersion: bfiola.dev/v1
+kind: MinioPolicyBinding
+metadata:
+  name: test
+spec:
+  policy: test
+  user: test
+  tenant: minio-23b8d64e/minio

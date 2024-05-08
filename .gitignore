@@ -1,0 +1,8 @@
+# Hide vscode project configuration
+**/.vscode/*.json
+
+# Hide environment files
+*.env
+
+# DO NOT ignore template files
+!*template*
