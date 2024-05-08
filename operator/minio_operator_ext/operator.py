@@ -516,6 +516,9 @@ async def create_minio_policy_binding(
             policy_binding_spec.policy, user=policy_binding_spec.user
         )
     except minio.error.MinioAdminException as e:
+        if e._code == "400":
+            if "policy change is already in effect" in e._body:
+                raise OperatorError(f"policy binding exists")
         if e._code == "404":
             if "user does not exist" in e._body:
                 raise OperatorError(f"user does not exist: {policy_binding_spec.user}")
@@ -538,6 +541,9 @@ async def delete_minio_policy_binding(
             policy_binding_spec.policy, user=policy_binding_spec.user
         )
     except minio.error.MinioAdminException as e:
+        if e._code == "400":
+            if "policy change is already in effect" in e._body:
+                return
         raise e
 
 
