@@ -27,13 +27,13 @@ rules:
   - apiGroups:
       - ""
     resources:
+      - configmaps
       - secrets
       - services
     verbs:
       - get
   - apiGroups:
       - bfiola.dev
-      - networking.k8s.io
     resources:
       - miniousers
       - miniobuckets

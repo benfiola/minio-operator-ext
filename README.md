@@ -31,7 +31,7 @@ The operator requires the a service account with the following RBAC settings:
 
 - Get/Watch/List/Patch `minio.min.io/v2/Tenants` - the operator needs to discover and inspect minio tenants. Patch is required to allow `kopf` to add finalizers to the tenants so the framework can monitor resource deletion.
 - Create `Events` - allows `kopf` to publish operator events
-- Get `Secrets|Services` - the operator needs to inspect tenant secrets to obtain admin credentials and tenant services to determine the internal minio console endpoint
+- Get `ConfigMaps|Secrets|Services` - the operator needs to inspect configmaps to obtain CAs used to generate minio tenant self-signed certificates, inspect tenant secrets to obtain admin credentials and tenant services to determine the internal minio console endpoint
 - Get/List/Patch/Watch `bfiola.dev/v1/MinioBuckets|MinioPolicies|MinioUsers|MinioPolicyBindings` - the operator needs to manage its own resources
 
 ## Limitations
