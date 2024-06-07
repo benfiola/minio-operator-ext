@@ -7,6 +7,7 @@ import io
 import json
 import logging
 import os
+import pathlib
 import tempfile
 from typing import Any, AsyncGenerator, Callable, Iterable, Protocol, TypeVar, cast
 
@@ -19,6 +20,17 @@ import minio.credentials.providers
 import pydantic
 
 logger = logging.getLogger(__name__)
+
+
+@contextlib.asynccontextmanager
+async def temporary_file(**kwargs) -> AsyncGenerator[pathlib.Path, None]:
+    """
+    Defines an async context manager that mimics that of `tempfile.NamedTemporaryFile`.
+
+    Rather than return a file handle, returns a `pathlib.Path` object.
+    """
+    with tempfile.NamedTemporaryFile(**kwargs) as handle:
+        yield pathlib.Path(handle.name)
 
 
 class OperatorError(Exception):
@@ -146,7 +158,9 @@ def handle_hook_exception(hook: WrappedFn) -> WrappedFn:
     return cast(WrappedFn, inner)
 
 
-def create_kube_client(*, kube_config: str | None) -> kubernetes.client.ApiClient:
+def create_kube_client(
+    *, kube_config: pathlib.Path | None
+) -> kubernetes.client.ApiClient:
     """
     Creates a kubernetes api client.
 
@@ -156,7 +170,7 @@ def create_kube_client(*, kube_config: str | None) -> kubernetes.client.ApiClien
     config = kubernetes.client.Configuration()
     if kube_config:
         kubernetes.config.load_kube_config(
-            config_file=kube_config, client_configuration=config
+            config_file=f"{kube_config}", client_configuration=config
         )
     else:
         kubernetes.config.load_incluster_config(client_configuration=config)
@@ -456,15 +470,16 @@ async def delete_minio_user(tenant: Tenant, user_spec: UserSpec):
 
 
 @contextlib.asynccontextmanager
-async def minio_policy_file(policy_spec: PolicySpec) -> AsyncGenerator[str, None]:
+async def minio_policy_file(
+    policy_spec: PolicySpec,
+) -> AsyncGenerator[pathlib.Path, None]:
     """
     Provides a context that writes a given policy spec to a policy file suitable for use with the minio admin apis.
     """
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".json") as policy_file:
+    async with temporary_file(suffix=".json") as policy_file:
         policy_data = policy_spec.model_dump_json(include={"version", "statement"})
-        policy_file.write(policy_data)
-        policy_file.flush()
-        yield policy_file.name
+        policy_file.write_text(policy_data)
+        yield policy_file
 
 
 async def create_minio_policy(tenant: Tenant, policy_spec: PolicySpec):
@@ -482,7 +497,7 @@ async def create_minio_policy(tenant: Tenant, policy_spec: PolicySpec):
             raise e
 
     async with minio_policy_file(policy_spec) as policy_file:
-        minio_admin_client.policy_add(policy_spec.name, policy_file)
+        minio_admin_client.policy_add(policy_spec.name, f"{policy_file}")
 
 
 async def update_minio_policy(tenant: Tenant, policy_spec: PolicySpec):
@@ -492,7 +507,7 @@ async def update_minio_policy(tenant: Tenant, policy_spec: PolicySpec):
     minio_admin_client = create_minio_admin_client(tenant)
 
     async with minio_policy_file(policy_spec) as policy_file:
-        minio_admin_client.policy_add(policy_spec.name, policy_file)
+        minio_admin_client.policy_add(policy_spec.name, f"{policy_file}")
 
 
 async def delete_minio_policy(tenant: Tenant, policy_spec: PolicySpec):
@@ -600,7 +615,7 @@ class Operator:
     # a client capable of communcating with kubernetes
     kube_client: kubernetes.client.ApiClient
     # an (optional) path to a kubeconfig file
-    kube_config: str | None
+    kube_config: pathlib.Path | None
     # a kopf.OperatorRegistry instance enabling this operator to *not* run in the module scope
     registry: kopf.OperatorRegistry
     # a tenant_fqn -> Tenant map used to process crd crud operations
@@ -610,7 +625,7 @@ class Operator:
         self,
         *,
         endpoint_overrides: dict[str, str] | None = None,
-        kube_config: str | None = None,
+        kube_config: pathlib.Path | None = None,
     ):
         self.endpoint_overrides = endpoint_overrides or {}
         self.kube_client = cast(kubernetes.client.ApiClient, None)
@@ -650,7 +665,7 @@ class Operator:
             env = os.environ
             try:
                 os.environ = dict(os.environ)
-                os.environ["KUBECONFIG"] = self.kube_config
+                os.environ["KUBECONFIG"] = f"{self.kube_config}"
                 return kopf.login_with_kubeconfig()
             finally:
                 os.environ = env
