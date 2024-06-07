@@ -35,3 +35,6 @@ helm install \
 
 echo "deploy custom resources"
 kubectl apply -f ./manifests/crds.yaml
+
+echo "deploy test resources"
+kubectl apply -f ./manifests/example_resources.yaml
