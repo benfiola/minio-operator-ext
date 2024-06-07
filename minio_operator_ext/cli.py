@@ -1,26 +1,22 @@
 import asyncio
-import logging
 import pathlib
 from typing import Callable, TypeVar
 
 import click
+import pydantic
 import uvloop
 
-from minio_operator_ext.logs import configure_logging
+from minio_operator_ext.logs import LogLevel, configure_logging
 from minio_operator_ext.operator import Operator
 
 SomeCallable = TypeVar("SomeCallable", bound=Callable)
 
 
-def log_level(value: str) -> int:
+def log_level(value: str) -> LogLevel:
     """
-    Click argument type that converts a log level string into
-    a int log level compatible with the logging module
+    Click argument type that produces a 'LogLevel' from an incoming value string.
     """
-    valid_values = ["debug", "info", "warning", "error"]
-    if value.lower() not in valid_values:
-        raise ValueError(value)
-    return getattr(logging, value.upper())
+    return pydantic.TypeAdapter(LogLevel).validate_python(value)
 
 
 def path(**kwargs) -> Callable[[str], pathlib.Path]:
@@ -42,7 +38,7 @@ def main():
 
 @click.group()
 @click.option("--log-level", type=log_level, envvar="MINIO_OPERATOR_EXT_LOG_LEVEL")
-def grp_main(log_level: int | None = None):
+def grp_main(log_level: LogLevel | None = None):
     uvloop.install()
     configure_logging(log_level)
 
