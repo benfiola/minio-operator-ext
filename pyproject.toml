@@ -12,19 +12,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest",
-    "pytest-asyncio"
-]
-
-[tool.pytest.ini_options]
-minversion = "6.0"
-log_cli = true
-log_cli_level = "DEBUG"
-asyncio_mode = "auto"
-testpaths = [
-    "tests"
-]
+dev = []
 
 [project.scripts]
 minio-operator-ext = "minio_operator_ext.cli:main"

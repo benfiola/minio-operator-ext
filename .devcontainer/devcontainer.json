@@ -2,7 +2,9 @@
   "build": {
     "dockerfile": "Dockerfile"
   },
-  "postCreateCommand": ".devcontainer/post-create.sh",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
   "customizations": {
     "vscode": {
       "extensions": [
@@ -11,7 +13,35 @@
         "ms-python.black-formatter",
         "ms-python.isort",
         "ms-python.python"
-      ]
+      ],
+      "settings": {
+        "editor.codeActionsOnSave": [
+          "source.organizeImports",
+          "source.formatDocument"
+        ],
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "isort.args": ["--profile", "black", "--project", "minio_operator_ext"],
+        "launch": {
+          "version": "0.2.0",
+          "configurations": [
+            {
+              "name": "Python: test.py",
+              "type": "debugpy",
+              "request": "launch",
+              "program": "${workspaceFolder:operator}/test.py",
+              "cwd": "${workspaceFolder:operator}",
+              "purpose": ["debug-test"],
+              "console": "integratedTerminal",
+              "justMyCode": false
+            }
+          ]
+        },
+        "python.defaultInterpreterPath": "/asdf/installs/python/3.10.12/bin/python3",
+        "[python]": {
+          "editor.defaultFormatter": "ms-python.black-formatter"
+        }
+      }
     }
-  }
+  },
+  "postCreateCommand": ".devcontainer/post-create.sh"
 }

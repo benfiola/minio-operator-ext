@@ -1,4 +1,0 @@
-# Hide everything in this folder *except* for templates
-*
-!.gitignore
-!*template*

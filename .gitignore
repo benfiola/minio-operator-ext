@@ -1,8 +1,19 @@
-# Hide vscode project configuration
+# Ignore vscode project configuration
 **/.vscode/*.json
 
-# Hide environment files
+# Ignore environment files
 *.env
 
 # DO NOT ignore template files
 !*template*
+
+# Ignore python generated files
+*.egg-info
+__pycache__
+.pytest_cache
+
+# Ignore root-level python files (e.g., test scripts)
+/*.py
+
+# DO NOT ingnore necessary root-level python files
+/setup.py

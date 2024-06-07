@@ -2,7 +2,7 @@
 
 The [MinIO Operator](https://github.com/minio/operator) currently is capable of deploying MinIO tenants - but does not expose any mechanisms by which one could declaratively manage resources within a MinIO tenant.
 
-This repo extends the MinIO Operator and provides an additional [operator](./operator) and [CRDs](./manifests/crds.yaml) that allow one to declaratiely manage users, buckets, policies and policy bindings.
+This repo extends the MinIO Operator and provides an additional [operator](./minio_operator_ext/operator.py) and [CRDs](./manifests/crds.yaml) that allow one to declaratiely manage users, buckets, policies and policy bindings.
 
 This is primarily a stopgap until support for minio resources lands in the official operator - but fulfills a personal need in the meantime. Feel free to fork or provide PRs to improve the operator!
 
