@@ -43,11 +43,11 @@ RUN asdf plugin add python && \
 
 # install minikube
 RUN apt -y install curl && \
-    mkdir -p /opt/minmikube && \
-    cd /opt/minmikube && \
-    curl -o /opt/minmikube/minmikube -fsSL "https://storage.googleapis.com/minikube/releases/v1.33.1/minikube-linux-${TARGETARCH}" && \
-    chmod +x /opt/minmikube/minmikube
-ENV PATH="/opt/minmikube:${PATH}"
+    mkdir -p /opt/minikube && \
+    cd /opt/minikube && \
+    curl -o /opt/minikube/minikube -fsSL "https://storage.googleapis.com/minikube/releases/v1.33.1/minikube-linux-${TARGETARCH}" && \
+    chmod +x /opt/minikube/minikube
+ENV PATH="/opt/minikube:${PATH}"
 
 # install kubectl
 RUN apt -y install curl && \

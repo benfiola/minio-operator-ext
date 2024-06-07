@@ -25,11 +25,11 @@
           "version": "0.2.0",
           "configurations": [
             {
-              "name": "Python: test.py",
+              "name": "Python: dev.py",
               "type": "debugpy",
               "request": "launch",
-              "program": "${workspaceFolder:operator}/test.py",
-              "cwd": "${workspaceFolder:operator}",
+              "program": "${workspaceFolder}/dev.py",
+              "cwd": "${workspaceFolder}",
               "purpose": ["debug-test"],
               "console": "integratedTerminal",
               "justMyCode": false

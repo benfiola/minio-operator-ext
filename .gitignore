@@ -4,9 +4,6 @@
 # Ignore environment files
 *.env
 
-# DO NOT ignore template files
-!*template*
-
 # Ignore python generated files
 *.egg-info
 __pycache__
@@ -17,3 +14,6 @@ __pycache__
 
 # DO NOT ingnore necessary root-level python files
 /setup.py
+
+# DO NOT ignore template files
+!*template*
