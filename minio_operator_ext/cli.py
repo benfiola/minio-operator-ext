@@ -3,6 +3,7 @@ import pathlib
 from typing import Callable, TypeVar
 
 import click
+import dotenv
 import pydantic
 import uvloop
 
@@ -36,7 +37,26 @@ def main():
     grp_main()
 
 
+def load_env_file(env_file: pathlib.Path):
+    """
+    Callback that loads an env file.  Ths is implemented as a callback to ensure
+    that env files are loaded as early as possible so that other arguments can be correctly
+    processed (as they can be set by environment variables).
+
+    NOTE: https://click.palletsprojects.com/en/8.1.x/options/#callbacks-and-eager-options
+    NOTE: Used as option to `grp_main`.
+    """
+    dotenv.load_dotenv(env_file)
+
+
 @click.group()
+@click.option(
+    "--env-file",
+    type=path(exists=True, dir_okay=False),
+    callback=lambda *args: load_env_file(args[2]),
+    is_eager=True,
+    expose_value=False,
+)
 @click.option("--log-level", type=log_level, envvar="MINIO_OPERATOR_EXT_LOG_LEVEL")
 def grp_main(log_level: LogLevel | None = None):
     uvloop.install()
