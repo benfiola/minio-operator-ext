@@ -236,6 +236,7 @@ class Tenant(BaseModel):
     """
 
     access_key: str
+    ca_bundle: str | None = None
     endpoint: str
     fqn: str
     secret_key: str
@@ -292,6 +293,68 @@ class PolicyBindingSpec(BaseModel):
     tenant: str
 
 
+async def get_resource_tenant(
+    kube_client: kubernetes.client.ApiClient, namespace: str, name: str
+) -> dict:
+    """
+    Async wrapper around a sync method to fetch a `Tenant` resource from kubernetes
+    """
+
+    def inner():
+        custom_objects_api = kubernetes.client.CustomObjectsApi(kube_client)
+        tenant = custom_objects_api.get_namespaced_custom_object(
+            "minio.min.io", "v2", namespace, "tenants", name
+        )
+        return cast(dict, kube_client.sanitize_for_serialization(tenant))
+
+    return await run_sync(inner)
+
+
+async def get_resource_config_map(
+    kube_client: kubernetes.client.ApiClient, namespace: str, name: str
+) -> dict:
+    """
+    Async wrapper around a sync method to fetch a `ConfigMap` resource from kubernetes
+    """
+
+    def inner():
+        core_api = kubernetes.client.CoreV1Api(kube_client)
+        config_map = core_api.read_namespaced_config_map(name, namespace)
+        return cast(dict, kube_client.sanitize_for_serialization(config_map))
+
+    return await run_sync(inner)
+
+
+async def get_resource_secret(
+    kube_client: kubernetes.client.ApiClient, namespace: str, name: str
+) -> dict:
+    """
+    Async wrapper around a sync method to fetch a `Secret` resource from kubernetes
+    """
+
+    def inner():
+        core_api = kubernetes.client.CoreV1Api(kube_client)
+        secret = core_api.read_namespaced_secret(name, namespace)
+        return cast(dict, kube_client.sanitize_for_serialization(secret))
+
+    return await run_sync(inner)
+
+
+async def get_resource_service(
+    kube_client: kubernetes.client.ApiClient, namespace: str, name: str
+) -> dict:
+    """
+    Async wrapper around a sync method to fetch a `Service` resource from kubernetes
+    """
+
+    def inner():
+        core_api = kubernetes.client.CoreV1Api(kube_client)
+        service = core_api.read_namespaced_service(name, namespace)
+        return cast(dict, kube_client.sanitize_for_serialization(service))
+
+    return await run_sync(inner)
+
+
 async def get_tenant(
     kube_client: kubernetes.client.ApiClient,
     tenant_fqn: str,
@@ -305,47 +368,42 @@ async def get_tenant(
     namespace, name = tenant_fqn.split("/")
 
     # get tenant resource
-    def _get_tenant():
-        custom_objects_api = kubernetes.client.CustomObjectsApi(kube_client)
-        tenant = custom_objects_api.get_namespaced_custom_object(
-            "minio.min.io", "v2", namespace, "tenants", name
-        )
-        return cast(dict, kube_client.sanitize_for_serialization(tenant))
-
-    tenant = await run_sync(_get_tenant)
+    tenant = await get_resource_tenant(kube_client, namespace, name)
 
     # determine whether tenant uses http or https
     secure = tenant["spec"]["requestAutoCert"]
 
+    # if the tenant uses https, fetch ca bundle used to verify self-signed cert
+    # NOTE: this will need to eventually support other certificate sources (e.g., cert-manager)
+    ca_bundle = None
+    if secure:
+        ca_bundle_config_map_name = "kube-root-ca.crt"
+        ca_bundle_config_map = await get_resource_config_map(
+            kube_client, namespace, ca_bundle_config_map_name
+        )
+        ca_bundle = ca_bundle_config_map["data"]["ca.crt"]
+
     # extract credentials from tenant secret
-    secret_name = tenant["spec"]["configuration"]["name"]
-
-    def _get_secret():
-        core_api = kubernetes.client.CoreV1Api(kube_client)
-        secret = core_api.read_namespaced_secret(secret_name, namespace)
-        return cast(dict, kube_client.sanitize_for_serialization(secret))
-
-    secret = await run_sync(_get_secret)
-    env_file = base64.b64decode(secret["data"]["config.env"]).decode("utf-8")
+    configuration_secret_name = tenant["spec"]["configuration"]["name"]
+    configuration_secret = await get_resource_secret(
+        kube_client, namespace, configuration_secret_name
+    )
+    env_file = configuration_secret["data"]["config.env"]
+    env_file = base64.b64decode(env_file)
+    env_file = env_file.decode("utf-8")
     env_file = env_file.replace("export ", "")
     env_data = dotenv.dotenv_values(stream=io.StringIO(env_file))
     access_key = env_data["MINIO_ROOT_USER"]
     secret_key = env_data["MINIO_ROOT_PASSWORD"]
     if not access_key or not secret_key:
         raise OperatorError(
-            f"credentials not found in secret: {namespace}/{secret_name}"
+            f"credentials not found in secret: {resource_fqn(configuration_secret)}"
         )
 
     # determine endpoint
     # (NOTE: assumes service name 'minio' from helm templates)
     service_name = "minio"
-
-    def _get_service():
-        core_api = kubernetes.client.CoreV1Api(kube_client)
-        service = core_api.read_namespaced_service(service_name, namespace)
-        return cast(dict, kube_client.sanitize_for_serialization(service))
-
-    service = await run_sync(_get_service)
+    service = await get_resource_service(kube_client, namespace, service_name)
     service_port: int | None = None
     service_port_name = "http-minio"
     if secure:
@@ -363,6 +421,7 @@ async def get_tenant(
 
     return Tenant(
         access_key=access_key,
+        ca_bundle=ca_bundle,
         endpoint=endpoint,
         fqn=tenant_fqn,
         secret_key=secret_key,
@@ -370,103 +429,116 @@ async def get_tenant(
     )
 
 
-def create_minio_client(tenant: Tenant) -> minio.Minio:
+@contextlib.asynccontextmanager
+async def create_minio_client(tenant: Tenant) -> AsyncGenerator[minio.Minio, None]:
     """
     Creates a minio client from the given tenant.
     """
-    return minio.Minio(
-        access_key=tenant.access_key,
-        endpoint=tenant.endpoint,
-        secret_key=tenant.secret_key,
-        secure=tenant.secure,
-    )
+    async with temporary_file(suffix=".crt") as ca_cert:
+        client = minio.Minio(
+            access_key=tenant.access_key,
+            endpoint=tenant.endpoint,
+            secret_key=tenant.secret_key,
+            secure=tenant.secure,
+        )
+        if tenant.secure and tenant.ca_bundle:
+            ca_cert.write_text(tenant.ca_bundle)
+            client._http.connection_pool_kw["ca_certs"] = f"{ca_cert}"
+        yield client
 
 
-def create_minio_admin_client(tenant: Tenant) -> minio.MinioAdmin:
+@contextlib.asynccontextmanager
+async def create_minio_admin_client(
+    tenant: Tenant,
+) -> AsyncGenerator[minio.MinioAdmin, None]:
     """
     Creates a minio admin client from the given tenant
     """
-    return minio.MinioAdmin(
-        credentials=minio.credentials.providers.StaticProvider(
-            access_key=tenant.access_key, secret_key=tenant.secret_key
-        ),
-        endpoint=tenant.endpoint,
-        secure=tenant.secure,
-    )
+    async with temporary_file(suffix=".crt") as ca_cert:
+        client = minio.MinioAdmin(
+            credentials=minio.credentials.providers.StaticProvider(
+                access_key=tenant.access_key, secret_key=tenant.secret_key
+            ),
+            endpoint=tenant.endpoint,
+            secure=tenant.secure,
+        )
+        if tenant.secure and tenant.ca_bundle:
+            ca_cert.write_text(tenant.ca_bundle)
+            client._http.connection_pool_kw["ca_certs"] = f"{ca_cert}"
+        yield client
 
 
 async def create_minio_bucket(tenant: Tenant, bucket_spec: BucketSpec):
     """
     Creates a new minio bucket given the provided bucket spec
     """
-    minio_client = create_minio_client(tenant)
-    try:
-        minio_client.make_bucket(bucket_spec.name)
-    except minio.error.S3Error as e:
-        if e.code == "BucketAlreadyOwnedByYou":
-            raise OperatorError(
-                f"bucket already exists: {tenant.fqn}/{bucket_spec.name}"
-            )
-        raise e
+    async with create_minio_client(tenant) as minio_client:
+        try:
+            minio_client.make_bucket(bucket_spec.name)
+        except minio.error.S3Error as e:
+            if e.code == "BucketAlreadyOwnedByYou":
+                raise OperatorError(
+                    f"bucket already exists: {tenant.fqn}/{bucket_spec.name}"
+                )
+            raise e
 
 
 async def update_minio_bucket(tenant: Tenant, bucket_spec: BucketSpec):
     """
     Updates an existing minio bucket given the provided bucket spec
     """
-    minio_client = create_minio_client(tenant)
+    async with create_minio_client(tenant) as minio_client:
+        pass
 
 
 async def delete_minio_bucket(tenant: Tenant, bucket_spec: BucketSpec):
     """
     Deletes an existing minio bucket given the provided bucket spec
     """
-    minio_client = create_minio_client(tenant)
-    try:
-        minio_client.remove_bucket(bucket_spec.name)
-    except minio.error.S3Error as e:
-        if e.code == "NoSuchBucket":
-            return
-        raise e
+    async with create_minio_client(tenant) as minio_client:
+        try:
+            minio_client.remove_bucket(bucket_spec.name)
+        except minio.error.S3Error as e:
+            if e.code == "NoSuchBucket":
+                return
+            raise e
 
 
 async def create_minio_user(tenant: Tenant, user_spec: UserSpec):
     """
     Creates a new user given the provided user spec
     """
-    minio_admin_client = create_minio_admin_client(tenant)
+    async with create_minio_admin_client(tenant) as minio_admin_client:
+        # NOTE: the `user_add` endpoint will succeed even if a user with the access key already exists
+        try:
+            minio_admin_client.user_info(user_spec.access_key)
+            raise OperatorError(f"user already exists: {user_spec.access_key}")
+        except minio.error.MinioAdminException as e:
+            if e._code != "404":
+                raise e
 
-    # NOTE: the `user_add` endpoint will succeed even if a user with the access key already exists
-    try:
-        minio_admin_client.user_info(user_spec.access_key)
-        raise OperatorError(f"user already exists: {user_spec.access_key}")
-    except minio.error.MinioAdminException as e:
-        if e._code != "404":
-            raise e
-
-    minio_admin_client.user_add(user_spec.access_key, user_spec.secret_key)
+        minio_admin_client.user_add(user_spec.access_key, user_spec.secret_key)
 
 
 async def update_minio_user(tenant: Tenant, user_spec: UserSpec):
     """
     Updates an existing user given the provided user spec
     """
-    minio_admin_client = create_minio_admin_client(tenant)
-
-    minio_admin_client.user_add(user_spec.access_key, user_spec.secret_key)
+    async with create_minio_admin_client(tenant) as minio_admin_client:
+        minio_admin_client.user_add(user_spec.access_key, user_spec.secret_key)
 
 
 async def delete_minio_user(tenant: Tenant, user_spec: UserSpec):
     """
     Deletes an existing user given the provided user spec
     """
-    minio_admin_client = create_minio_admin_client(tenant)
-    try:
-        minio_admin_client.user_remove(user_spec.access_key)
-    except minio.error.MinioAdminException as e:
-        if e._code == "404":
-            return
-        raise e
+    async with create_minio_admin_client(tenant) as minio_admin_client:
+        try:
+            minio_admin_client.user_remove(user_spec.access_key)
+        except minio.error.MinioAdminException as e:
+            if e._code == "404":
+                return
+            raise e
 
 
 @contextlib.asynccontextmanager
@@ -486,37 +558,34 @@ async def create_minio_policy(tenant: Tenant, policy_spec: PolicySpec):
     """
     Creates a new policy given the provided policy spec
     """
-    minio_admin_client = create_minio_admin_client(tenant)
+    async with create_minio_admin_client(tenant) as minio_admin_client:
+        # NOTE: the `policy_add` endpoint will succeed even if a policy with the given name already exists
+        try:
+            minio_admin_client.policy_info(policy_spec.name)
+            raise OperatorError(f"policy already exists: {policy_spec.name}")
+        except minio.error.MinioAdminException as e:
+            if e._code != "404":
+                raise e
 
-    # NOTE: the `policy_add` endpoint will succeed even if a policy with the given name already exists
-    try:
-        minio_admin_client.policy_info(policy_spec.name)
-        raise OperatorError(f"policy already exists: {policy_spec.name}")
-    except minio.error.MinioAdminException as e:
-        if e._code != "404":
-            raise e
-
-    async with minio_policy_file(policy_spec) as policy_file:
-        minio_admin_client.policy_add(policy_spec.name, f"{policy_file}")
+        async with minio_policy_file(policy_spec) as policy_file:
+            minio_admin_client.policy_add(policy_spec.name, f"{policy_file}")
 
 
 async def update_minio_policy(tenant: Tenant, policy_spec: PolicySpec):
     """
     Updates an existing policy given the provided policy spec
     """
-    minio_admin_client = create_minio_admin_client(tenant)
-
-    async with minio_policy_file(policy_spec) as policy_file:
-        minio_admin_client.policy_add(policy_spec.name, f"{policy_file}")
+    async with create_minio_admin_client(tenant) as minio_admin_client:
+        async with minio_policy_file(policy_spec) as policy_file:
+            minio_admin_client.policy_add(policy_spec.name, f"{policy_file}")
 
 
 async def delete_minio_policy(tenant: Tenant, policy_spec: PolicySpec):
     """
     Deletes an existing policy given the provided policy spec
     """
-    minio_admin_client = create_minio_admin_client(tenant)
-
-    minio_admin_client.policy_remove(policy_spec.name)
+    async with create_minio_admin_client(tenant) as minio_admin_client:
+        minio_admin_client.policy_remove(policy_spec.name)
 
 
 async def create_minio_policy_binding(
@@ -525,23 +594,25 @@ async def create_minio_policy_binding(
     """
     Creates a new policy binding given the provided policy binding spec
     """
-    minio_admin_client = create_minio_admin_client(tenant)
-    try:
-        minio_admin_client.policy_set(
-            policy_binding_spec.policy, user=policy_binding_spec.user
-        )
-    except minio.error.MinioAdminException as e:
-        if e._code == "400":
-            if "policy change is already in effect" in e._body:
-                raise OperatorError(f"policy binding exists")
-        if e._code == "404":
-            if "user does not exist" in e._body:
-                raise OperatorError(f"user does not exist: {policy_binding_spec.user}")
-            elif "canned policy does not exist" in e._body:
-                raise OperatorError(
-                    f"policy does not exist: {policy_binding_spec.policy}"
-                )
-        raise e
+    async with create_minio_admin_client(tenant) as minio_admin_client:
+        try:
+            minio_admin_client.policy_set(
+                policy_binding_spec.policy, user=policy_binding_spec.user
+            )
+        except minio.error.MinioAdminException as e:
+            if e._code == "400":
+                if "policy change is already in effect" in e._body:
+                    raise OperatorError(f"policy binding exists")
+            if e._code == "404":
+                if "user does not exist" in e._body:
+                    raise OperatorError(
+                        f"user does not exist: {policy_binding_spec.user}"
+                    )
+                elif "canned policy does not exist" in e._body:
+                    raise OperatorError(
+                        f"policy does not exist: {policy_binding_spec.policy}"
+                    )
+            raise e
 
 
 async def delete_minio_policy_binding(
@@ -550,16 +621,16 @@ async def delete_minio_policy_binding(
     """
     Deletes an existing policy binding given the provided policy binding spec
     """
-    minio_admin_client = create_minio_admin_client(tenant)
-    try:
-        minio_admin_client.policy_unset(
-            policy_binding_spec.policy, user=policy_binding_spec.user
-        )
-    except minio.error.MinioAdminException as e:
-        if e._code == "400":
-            if "policy change is already in effect" in e._body:
-                return
-        raise e
+    async with create_minio_admin_client(tenant) as minio_admin_client:
+        try:
+            minio_admin_client.policy_unset(
+                policy_binding_spec.policy, user=policy_binding_spec.user
+            )
+        except minio.error.MinioAdminException as e:
+            if e._code == "400":
+                if "policy change is already in effect" in e._body:
+                    return
+            raise e
 
 
 SomeModel = TypeVar("SomeModel", bound=BaseModel)
