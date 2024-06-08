@@ -17,8 +17,13 @@ spec:
               properties:
                 name:
                   type: string
-                tenant:
-                  type: string
+                tenantRef:
+                  type: object
+                  properties:
+                    namespace:
+                      type: string
+                    name:
+                      type: string
             status:
               type: object
               properties:
@@ -26,10 +31,14 @@ spec:
                   type: object
                   x-kubernetes-preserve-unknown-fields: true
       additionalPrinterColumns:
-        - name: Tenant
+        - name: Tenant Namespace
           type: string
-          description: Tenant
-          jsonPath: .status.currentSpec.tenant
+          description: Tenant Namespace
+          jsonPath: .status.currentSpec.tenantRef.namespace
+        - name: Tenant Name
+          type: string
+          description: Tenant Name
+          jsonPath: .status.currentSpec.tenantRef.name
         - name: Name
           type: string
           description: Name
@@ -68,8 +77,13 @@ spec:
                       type: string
                     key:
                       type: string
-                tenant:
-                  type: string
+                tenantRef:
+                  type: object
+                  properties:
+                    namespace:
+                      type: string
+                    name:
+                      type: string
             status:
               type: object
               properties:
@@ -77,10 +91,14 @@ spec:
                   type: object
                   x-kubernetes-preserve-unknown-fields: true
       additionalPrinterColumns:
-        - name: Tenant
+        - name: Tenant Namespace
           type: string
-          description: Tenant
-          jsonPath: .status.currentSpec.tenant
+          description: Tenant Namespace
+          jsonPath: .status.currentSpec.tenantRef.namespace
+        - name: Tenant Name
+          type: string
+          description: Tenant Name
+          jsonPath: .status.currentSpec.tenantRef.name
         - name: Access Key
           type: string
           description: Access Key
@@ -110,8 +128,13 @@ spec:
               properties:
                 name:
                   type: string
-                tenant:
-                  type: string
+                tenantRef:
+                  type: object
+                  properties:
+                    namespace:
+                      type: string
+                    name:
+                      type: string
                 version:
                   type: string
                   default: "2012-10-17"
@@ -137,10 +160,14 @@ spec:
                   type: object
                   x-kubernetes-preserve-unknown-fields: true
       additionalPrinterColumns:
-        - name: Tenant
+        - name: Tenant Namespace
           type: string
-          description: Tenant
-          jsonPath: .status.currentSpec.tenant
+          description: Tenant Namespace
+          jsonPath: .status.currentSpec.tenantRef.namespace
+        - name: Tenant Name
+          type: string
+          description: Tenant Name
+          jsonPath: .status.currentSpec.tenantRef.name
         - name: Name
           type: string
           description: Name
@@ -168,8 +195,13 @@ spec:
             spec:
               type: object
               properties:
-                tenant:
-                  type: string
+                tenantRef:
+                  type: object
+                  properties:
+                    namespace:
+                      type: string
+                    name:
+                      type: string
                 policy:
                   type: string
                 user:
@@ -181,10 +213,14 @@ spec:
                   type: object
                   x-kubernetes-preserve-unknown-fields: true
       additionalPrinterColumns:
-        - name: Tenant
+        - name: Tenant Namespace
           type: string
-          description: Tenant
-          jsonPath: .status.currentSpec.tenant
+          description: Tenant Namespace
+          jsonPath: .status.currentSpec.tenantRef.namespace
+        - name: Tenant Name
+          type: string
+          description: Tenant Name
+          jsonPath: .status.currentSpec.tenantRef.name
         - name: Policy
           type: string
           description: Policy

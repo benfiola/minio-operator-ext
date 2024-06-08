@@ -38,3 +38,27 @@ kubectl apply -f ./manifests/crds.yaml
 
 echo "deploy test resources"
 kubectl apply -f ./manifests/example_resources.yaml
+
+echo "adding /etc/hosts entry for minio tenant service"
+if [ ! -f "/etc/hosts.bak" ]; then
+  cp /etc/hosts /etc/hosts.bak
+fi
+cp /etc/hosts.bak /etc/hosts
+echo "127.0.0.1 minio.minio-tenant.svc.cluster.local" >> /etc/hosts
+
+echo "waiting for minio tenant to be ready"
+while true; do
+  set +e
+  kubectl wait --namespace minio-tenant --selector v1.min.io/tenant=myminio --for=condition=ready pod --timeout=0s > /dev/null 2>&1
+  code="$?"
+  set -e
+  if [ "${code}" = "0" ]; then
+    echo "minio tenant ready"
+    break
+  fi
+  echo "minio tenant not ready"
+  sleep 5
+done
+
+echo "forwarding minio tenant service port"
+kubectl port-forward --namespace minio-tenant services/minio --pod-running-timeout=1h 443:443

@@ -66,6 +66,10 @@ This will:
 - Install the minio operator
 - Create a minio tenant
 - Apply the [custom resources](./manifests/crds.yaml)
+- Apply the [example resources](./manifests/example_resources.yaml)
+- Set a rule in /etc/hosts for the internal service name of the minio tenant
+- Waits for minio tenant to finish deploying
+- Forward the minio tenant service to localhost
 
 ### Creating a launch script
 

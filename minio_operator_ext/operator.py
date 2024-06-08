@@ -18,6 +18,7 @@ import kubernetes
 import minio
 import minio.credentials.providers
 import pydantic
+import urllib3
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +143,10 @@ def log_hook(hook: WrappedFn) -> WrappedFn:
             logger.info(f"{hook_name} completed")
             return rv
         except Exception as e:
-            logger.exception(f"{hook_name} failed", exc_info=e)
+            if isinstance(e, kopf.TemporaryError):
+                logger.error(f"{hook_name} failed with retryable error: {e}")
+            elif isinstance(e, kopf.PermanentError):
+                logger.error(f"{hook_name} failed with non-retryable error: {e}")
             raise e
 
     return cast(WrappedFn, inner)
@@ -165,11 +169,13 @@ def handle_hook_exception(hook: WrappedFn) -> WrappedFn:
             return await hook(*args, **kwargs)
         except OperatorError as e:
             if e.recoverable:
-                raise kopf.TemporaryError(str(e))
+                raise kopf.TemporaryError(str(e)) from e
             else:
-                raise kopf.PermanentError(str(e))
+                raise kopf.PermanentError(str(e)) from e
         except pydantic.ValidationError as e:
-            raise kopf.PermanentError(str(e))
+            raise kopf.PermanentError(str(e)) from e
+        except Exception as e:
+            raise kopf.TemporaryError(str(e)) from e
 
     return cast(WrappedFn, inner)
 
@@ -204,25 +210,6 @@ async def run_sync(f: Callable[[], RunSyncRV]) -> RunSyncRV:
     return await asyncio.get_running_loop().run_in_executor(None, f)
 
 
-async def list_tenant_fqns(
-    kube_client: kubernetes.client.ApiClient,
-) -> AsyncGenerator[str, None]:
-    """
-    Lists all minio tenants within the cluster (by fully-qualified name).
-    """
-
-    def inner():
-        custom_objects_api = kubernetes.client.CustomObjectsApi(kube_client)
-        resource_list = custom_objects_api.list_cluster_custom_object(
-            "minio.min.io", "v2", "tenants"
-        )
-        return cast(dict, kube_client.sanitize_for_serialization(resource_list))
-
-    resource_list = await run_sync(inner)
-    for item in resource_list["items"]:
-        yield resource_fqn(item)
-
-
 class BaseModel(pydantic.BaseModel):
     def model_dump(self, **kwargs):
         """
@@ -246,24 +233,48 @@ class BaseModel(pydantic.BaseModel):
         return super().model_dump_json(**kwargs)
 
 
-class ResourceRef(BaseModel):
+class SpecResourceRef(BaseModel):
     """
-    Represents a reference to another kubernetes resource
+    Represents a reference to another kubernetes resource as defined in a resource spec.
 
     The 'namespace' field is optional - if 'None' assumed to be the current namespace
     of the containing object.
     """
 
-    namespace: str | None = None
     name: str
+    namespace: str | None = None
+
+    def resource_ref(self, default_namespace: str) -> "ResourceRef":
+        """
+        Convenience method to create a 'ResourceRef' object.
+
+        Will set the namespace to 'default_namespace' if namespace is None.
+        """
+        return ResourceRef(
+            name=self.name, namespace=self.namespace or default_namespace
+        )
 
 
-class SecretKeyRef(ResourceRef):
+class SpecSecretKeyRef(SpecResourceRef):
     """
-    Represents a reference to a key of a kubernetes 'Secret' resource.
+    Represents a reference to a key of a kubernetes 'Secret' resource as defined in a resource spec.
     """
 
     key: str
+
+
+class ResourceRef(BaseModel):
+    """
+    Represents a reference to a kubernetes resource.  Differs from `SpecResourceRef` in that the namespace
+    field *must* be set.
+    """
+
+    name: str
+    namespace: str
+
+    @property
+    def fqn(self) -> str:
+        return f"{self.namespace}/{self.name}"
 
 
 class Tenant(BaseModel):
@@ -274,7 +285,7 @@ class Tenant(BaseModel):
     access_key: str
     ca_bundle: str | None = None
     endpoint: str
-    fqn: str
+    resource: ResourceRef
     secret_key: str
     secure: bool
 
@@ -285,10 +296,13 @@ class BucketSpec(BaseModel):
     """
 
     name: str
-    tenant: str
+    tenant_ref: SpecResourceRef = pydantic.Field(alias="tenantRef")
 
 
-Bucket = BucketSpec
+class Bucket(BaseModel):
+    name: str
+    resource: ResourceRef
+    tenant: Tenant
 
 
 class UserSpec(BaseModel):
@@ -297,8 +311,8 @@ class UserSpec(BaseModel):
     """
 
     access_key: str = pydantic.Field(alias="accessKey")
-    secret_key_ref: SecretKeyRef = pydantic.Field(alias="secretKeyRef")
-    tenant: str
+    secret_key_ref: SpecSecretKeyRef = pydantic.Field(alias="secretKeyRef")
+    tenant_ref: SpecResourceRef = pydantic.Field(alias="tenantRef")
 
 
 class User(BaseModel):
@@ -308,7 +322,8 @@ class User(BaseModel):
 
     access_key: str
     secret_key: str
-    tenant: str
+    resource: ResourceRef
+    tenant: Tenant
 
 
 class PolicyStatement(BaseModel):
@@ -328,11 +343,16 @@ class PolicySpec(BaseModel):
 
     statement: list[PolicyStatement]
     name: str
-    tenant: str
+    tenant_ref: SpecResourceRef = pydantic.Field(alias="tenantRef")
     version: str
 
 
-Policy = PolicySpec
+class Policy(BaseModel):
+    statement: list[PolicyStatement]
+    name: str
+    resource: ResourceRef
+    tenant: Tenant
+    version: str
 
 
 class PolicyBindingSpec(BaseModel):
@@ -342,15 +362,19 @@ class PolicyBindingSpec(BaseModel):
 
     user: str
     policy: str
-    tenant: str
+    tenant_ref: SpecResourceRef = pydantic.Field(alias="tenantRef")
 
 
-PolicyBinding = PolicyBindingSpec
+class PolicyBinding(BaseModel):
+    user: str
+    policy: str
+    resource: ResourceRef
+    tenant: Tenant
 
 
 async def get_resource_tenant(
-    kube_client: kubernetes.client.ApiClient, namespace: str, name: str
-) -> dict:
+    kube_client: kubernetes.client.ApiClient, ref: ResourceRef
+):
     """
     Async wrapper around a sync method to fetch a `Tenant` resource from kubernetes
     """
@@ -358,7 +382,7 @@ async def get_resource_tenant(
     def inner():
         custom_objects_api = kubernetes.client.CustomObjectsApi(kube_client)
         tenant = custom_objects_api.get_namespaced_custom_object(
-            "minio.min.io", "v2", namespace, "tenants", name
+            "minio.min.io", "v2", ref.namespace, "tenants", ref.name
         )
         return cast(dict, kube_client.sanitize_for_serialization(tenant))
 
@@ -366,7 +390,7 @@ async def get_resource_tenant(
 
 
 async def get_resource_config_map(
-    kube_client: kubernetes.client.ApiClient, namespace: str, name: str
+    kube_client: kubernetes.client.ApiClient, ref: ResourceRef
 ) -> dict:
     """
     Async wrapper around a sync method to fetch a `ConfigMap` resource from kubernetes
@@ -374,14 +398,14 @@ async def get_resource_config_map(
 
     def inner():
         core_api = kubernetes.client.CoreV1Api(kube_client)
-        config_map = core_api.read_namespaced_config_map(name, namespace)
+        config_map = core_api.read_namespaced_config_map(ref.name, ref.namespace)
         return cast(dict, kube_client.sanitize_for_serialization(config_map))
 
     return await run_sync(inner)
 
 
 async def get_resource_secret(
-    kube_client: kubernetes.client.ApiClient, namespace: str, name: str
+    kube_client: kubernetes.client.ApiClient, ref: ResourceRef
 ) -> dict:
     """
     Async wrapper around a sync method to fetch a `Secret` resource from kubernetes
@@ -389,14 +413,14 @@ async def get_resource_secret(
 
     def inner():
         core_api = kubernetes.client.CoreV1Api(kube_client)
-        secret = core_api.read_namespaced_secret(name, namespace)
+        secret = core_api.read_namespaced_secret(ref.name, ref.namespace)
         return cast(dict, kube_client.sanitize_for_serialization(secret))
 
     return await run_sync(inner)
 
 
 async def get_resource_service(
-    kube_client: kubernetes.client.ApiClient, namespace: str, name: str
+    kube_client: kubernetes.client.ApiClient, ref: ResourceRef
 ) -> dict:
     """
     Async wrapper around a sync method to fetch a `Service` resource from kubernetes
@@ -404,26 +428,21 @@ async def get_resource_service(
 
     def inner():
         core_api = kubernetes.client.CoreV1Api(kube_client)
-        service = core_api.read_namespaced_service(name, namespace)
+        service = core_api.read_namespaced_service(ref.name, ref.namespace)
         return cast(dict, kube_client.sanitize_for_serialization(service))
 
     return await run_sync(inner)
 
 
 async def get_tenant(
-    kube_client: kubernetes.client.ApiClient,
-    tenant_fqn: str,
-    endpoint_overrides: dict[str, str] | None = None,
+    kube_client: kubernetes.client.ApiClient, ref: ResourceRef
 ) -> Tenant:
     """
     Builds a `Tenant` object from information fetched from
     resources within the kubernetes cluster.
     """
-    endpoint_overrides = endpoint_overrides or {}
-    namespace, name = tenant_fqn.split("/")
-
     # get tenant resource
-    tenant = await get_resource_tenant(kube_client, namespace, name)
+    tenant = await get_resource_tenant(kube_client, ref)
 
     # determine whether tenant uses http or https
     secure = tenant["spec"]["requestAutoCert"]
@@ -432,17 +451,15 @@ async def get_tenant(
     # NOTE: this will need to eventually support other certificate sources (e.g., cert-manager)
     ca_bundle = None
     if secure:
-        ca_bundle_config_map_name = "kube-root-ca.crt"
-        ca_bundle_config_map = await get_resource_config_map(
-            kube_client, namespace, ca_bundle_config_map_name
-        )
+        ca_bundle_ref = ResourceRef(name="kube-root-ca.crt", namespace=ref.namespace)
+        ca_bundle_config_map = await get_resource_config_map(kube_client, ca_bundle_ref)
         ca_bundle = ca_bundle_config_map["data"]["ca.crt"]
 
     # extract credentials from tenant secret
-    configuration_secret_name = tenant["spec"]["configuration"]["name"]
-    configuration_secret = await get_resource_secret(
-        kube_client, namespace, configuration_secret_name
+    configuration_ref = ResourceRef(
+        name=tenant["spec"]["configuration"]["name"], namespace=ref.namespace
     )
+    configuration_secret = await get_resource_secret(kube_client, configuration_ref)
     env_file = configuration_secret["data"]["config.env"]
     env_file = base64.b64decode(env_file)
     env_file = env_file.decode("utf-8")
@@ -457,8 +474,8 @@ async def get_tenant(
 
     # determine endpoint
     # (NOTE: assumes service name 'minio' from helm templates)
-    service_name = "minio"
-    service = await get_resource_service(kube_client, namespace, service_name)
+    service_ref = ResourceRef(name="minio", namespace=ref.namespace)
+    service = await get_resource_service(kube_client, service_ref)
     service_port: int | None = None
     service_port_name = "http-minio"
     if secure:
@@ -469,16 +486,16 @@ async def get_tenant(
         service_port = port["port"]
         break
     if not service_port:
-        raise OperatorError(f"port not found in service: {namespace}/{service_name}")
-    endpoint = f"{service_name}.{namespace}.svc.cluster.local:{service_port}"
-    if tenant_fqn in endpoint_overrides:
-        endpoint = endpoint_overrides[tenant_fqn]
+        raise OperatorError(f"port not found in service: {resource_fqn(service)}")
+    endpoint = (
+        f"{service_ref.name}.{service_ref.namespace}.svc.cluster.local:{service_port}"
+    )
 
     return Tenant(
         access_key=access_key,
         ca_bundle=ca_bundle,
         endpoint=endpoint,
-        fqn=tenant_fqn,
+        resource=ref,
         secret_key=secret_key,
         secure=secure,
     )
@@ -524,19 +541,24 @@ async def create_minio_admin_client(
 
 
 async def resolve_minio_bucket_spec(
-    kube_client: kubernetes.client.ApiClient, bucket_spec: BucketSpec
+    kube_client: kubernetes.client.ApiClient, bucket_spec: BucketSpec, body: kopf.Body
 ) -> Bucket:
     """
     Resolves a bucket spec to a bucket - translating references to actual values.
     """
-    return bucket_spec
+    namespace = resource_namespace(body)
+    name: str = body["metadata"]["name"]
+    resource = ResourceRef(name=name, namespace=namespace)
+    tenant_ref = bucket_spec.tenant_ref.resource_ref(namespace)
+    tenant = await get_tenant(kube_client, tenant_ref)
+    return Bucket(name=bucket_spec.name, resource=resource, tenant=tenant)
 
 
-async def create_minio_bucket(tenant: Tenant, bucket: Bucket):
+async def create_minio_bucket(bucket: Bucket):
     """
     Creates a new minio bucket given the provided bucket
     """
-    async with create_minio_client(tenant) as minio_client:
+    async with create_minio_client(bucket.tenant) as minio_client:
 
         def inner():
             try:
@@ -544,18 +566,18 @@ async def create_minio_bucket(tenant: Tenant, bucket: Bucket):
             except minio.error.S3Error as e:
                 if e.code == "BucketAlreadyOwnedByYou":
                     raise OperatorError(
-                        f"bucket already exists: {tenant.fqn}/{bucket.name}"
+                        f"bucket already exists: {bucket.tenant.resource.fqn}/{bucket.name}"
                     )
                 raise e
 
         await run_sync(inner)
 
 
-async def update_minio_bucket(tenant: Tenant, bucket: Bucket):
+async def update_minio_bucket(bucket: Bucket):
     """
     Updates an existing minio bucket given the provided bucket
     """
-    async with create_minio_client(tenant) as minio_client:
+    async with create_minio_client(bucket.tenant) as minio_client:
 
         def inner():
             pass
@@ -563,11 +585,11 @@ async def update_minio_bucket(tenant: Tenant, bucket: Bucket):
         await run_sync(inner)
 
 
-async def delete_minio_bucket(tenant: Tenant, bucket: Bucket):
+async def delete_minio_bucket(bucket: Bucket):
     """
     Deletes an existing minio bucket given the provided bucket
     """
-    async with create_minio_client(tenant) as minio_client:
+    async with create_minio_client(bucket.tenant) as minio_client:
 
         def inner():
             try:
@@ -581,30 +603,34 @@ async def delete_minio_bucket(tenant: Tenant, bucket: Bucket):
 
 
 async def resolve_minio_user_spec(
-    kube_client: kubernetes.client.ApiClient, user_spec: UserSpec
+    kube_client: kubernetes.client.ApiClient, user_spec: UserSpec, body: kopf.Body
 ) -> User:
     """
     Resolves a user spec to a user - translating references to actual values.
     """
-    # NOTE: the operator should set this value if it's omitted from the actual resource.
-    if user_spec.secret_key_ref.namespace is None:
-        raise OperatorError(f"unknown namespace for secret key ref")
-    secret = await get_resource_secret(
-        kube_client, user_spec.secret_key_ref.namespace, user_spec.secret_key_ref.name
-    )
+    namespace = resource_namespace(body)
+    name: str = body["metadata"]["name"]
+    resource = ResourceRef(name=name, namespace=namespace)
+    secret_ref = user_spec.secret_key_ref.resource_ref(namespace)
+    secret = await get_resource_secret(kube_client, secret_ref)
     secret_key = secret["data"][user_spec.secret_key_ref.key]
     secret_key = base64.b64decode(secret_key)
     secret_key = secret_key.decode("utf-8")
+    tenant_ref = user_spec.tenant_ref.resource_ref(namespace)
+    tenant = await get_tenant(kube_client, tenant_ref)
     return User(
-        access_key=user_spec.access_key, secret_key=secret_key, tenant=user_spec.tenant
+        access_key=user_spec.access_key,
+        secret_key=secret_key,
+        resource=resource,
+        tenant=tenant,
     )
 
 
-async def create_minio_user(tenant: Tenant, user: User):
+async def create_minio_user(user: User):
     """
     Creates a new user given the provided user
     """
-    async with create_minio_admin_client(tenant) as minio_admin_client:
+    async with create_minio_admin_client(user.tenant) as minio_admin_client:
 
         def inner():
             # NOTE: the `user_add` endpoint will succeed even if a user with the access key already exists
@@ -620,11 +646,11 @@ async def create_minio_user(tenant: Tenant, user: User):
         await run_sync(inner)
 
 
-async def update_minio_user(tenant: Tenant, user: User):
+async def update_minio_user(user: User):
     """
     Updates an existing user given the provided user
     """
-    async with create_minio_admin_client(tenant) as minio_admin_client:
+    async with create_minio_admin_client(user.tenant) as minio_admin_client:
 
         def inner():
             minio_admin_client.user_add(user.access_key, user.secret_key)
@@ -632,11 +658,11 @@ async def update_minio_user(tenant: Tenant, user: User):
         await run_sync(inner)
 
 
-async def delete_minio_user(tenant: Tenant, user: User):
+async def delete_minio_user(user: User):
     """
     Deletes an existing user given the provided user
     """
-    async with create_minio_admin_client(tenant) as minio_admin_client:
+    async with create_minio_admin_client(user.tenant) as minio_admin_client:
 
         def inner():
             try:
@@ -650,12 +676,23 @@ async def delete_minio_user(tenant: Tenant, user: User):
 
 
 async def resolve_minio_policy_spec(
-    kube_client: kubernetes.client.ApiClient, policy_spec: PolicySpec
+    kube_client: kubernetes.client.ApiClient, policy_spec: PolicySpec, body: kopf.Body
 ) -> Policy:
     """
     Resolves a policy spec to a policy - translating references to actual values.
     """
-    return policy_spec
+    namespace = resource_namespace(body)
+    name: str = body["metadata"]["name"]
+    resource = ResourceRef(name=name, namespace=namespace)
+    tenant_ref = policy_spec.tenant_ref.resource_ref(namespace)
+    tenant = await get_tenant(kube_client, tenant_ref)
+    return Policy(
+        name=policy_spec.name,
+        resource=resource,
+        statement=policy_spec.statement,
+        tenant=tenant,
+        version=policy_spec.version,
+    )
 
 
 @contextlib.asynccontextmanager
@@ -671,11 +708,11 @@ async def minio_policy_file(
         yield policy_file
 
 
-async def create_minio_policy(tenant: Tenant, policy: Policy):
+async def create_minio_policy(policy: Policy):
     """
     Creates a new policy given the provided policy
     """
-    async with create_minio_admin_client(tenant) as minio_admin_client:
+    async with create_minio_admin_client(policy.tenant) as minio_admin_client:
         async with minio_policy_file(policy) as policy_file:
 
             def inner():
@@ -692,11 +729,11 @@ async def create_minio_policy(tenant: Tenant, policy: Policy):
             return await run_sync(inner)
 
 
-async def update_minio_policy(tenant: Tenant, policy: Policy):
+async def update_minio_policy(policy: Policy):
     """
     Updates an existing policy given the provided policy
     """
-    async with create_minio_admin_client(tenant) as minio_admin_client:
+    async with create_minio_admin_client(policy.tenant) as minio_admin_client:
         async with minio_policy_file(policy) as policy_file:
 
             def inner():
@@ -705,11 +742,11 @@ async def update_minio_policy(tenant: Tenant, policy: Policy):
             await run_sync(inner)
 
 
-async def delete_minio_policy(tenant: Tenant, policy: Policy):
+async def delete_minio_policy(policy: Policy):
     """
     Deletes an existing policy given the provided policy
     """
-    async with create_minio_admin_client(tenant) as minio_admin_client:
+    async with create_minio_admin_client(policy.tenant) as minio_admin_client:
 
         def inner():
             minio_admin_client.policy_remove(policy.name)
@@ -718,19 +755,31 @@ async def delete_minio_policy(tenant: Tenant, policy: Policy):
 
 
 async def resolve_minio_policy_binding_spec(
-    kube_client: kubernetes.client.ApiClient, policy_binding_spec: PolicyBindingSpec
+    kube_client: kubernetes.client.ApiClient,
+    policy_binding_spec: PolicyBindingSpec,
+    body: kopf.Body,
 ) -> PolicyBinding:
     """
     Resolves a policy binding spec to a policy binding - translating references to actual values.
     """
-    return policy_binding_spec
+    namespace = resource_namespace(body)
+    name: str = body["metadata"]["name"]
+    resource = ResourceRef(name=name, namespace=namespace)
+    tenant_ref = policy_binding_spec.tenant_ref.resource_ref(namespace)
+    tenant = await get_tenant(kube_client, tenant_ref)
+    return PolicyBinding(
+        policy=policy_binding_spec.policy,
+        resource=resource,
+        tenant=tenant,
+        user=policy_binding_spec.user,
+    )
 
 
-async def create_minio_policy_binding(tenant: Tenant, policy_binding: PolicyBinding):
+async def create_minio_policy_binding(policy_binding: PolicyBinding):
     """
     Creates a new policy binding given the provided policy binding
     """
-    async with create_minio_admin_client(tenant) as minio_admin_client:
+    async with create_minio_admin_client(policy_binding.tenant) as minio_admin_client:
 
         def inner():
             try:
@@ -746,11 +795,11 @@ async def create_minio_policy_binding(tenant: Tenant, policy_binding: PolicyBind
         await run_sync(inner)
 
 
-async def delete_minio_policy_binding(tenant: Tenant, policy_binding: PolicyBinding):
+async def delete_minio_policy_binding(policy_binding: PolicyBinding):
     """
     Deletes an existing policy binding given the provided policy binding
     """
-    async with create_minio_admin_client(tenant) as minio_admin_client:
+    async with create_minio_admin_client(policy_binding.tenant) as minio_admin_client:
 
         def inner():
             try:
@@ -819,9 +868,6 @@ class Operator:
     a handful of custom resource definitions with a remote minio server.
     """
 
-    # allows the caller to override endpoints in this tenant_fqn -> endpoint mapping
-    # (this is useful for out-of-cluster development where a service DNS record isn't connectable)
-    endpoint_overrides: dict[str, str]
     # a client capable of communcating with kubernetes
     kube_client: kubernetes.client.ApiClient
     # an (optional) path to a kubeconfig file
@@ -832,10 +878,8 @@ class Operator:
     def __init__(
         self,
         *,
-        endpoint_overrides: dict[str, str] | None = None,
         kube_config: pathlib.Path | None = None,
     ):
-        self.endpoint_overrides = endpoint_overrides or {}
         self.kube_client = cast(kubernetes.client.ApiClient, None)
         self.kube_config = kube_config
         self.registry = kopf.OperatorRegistry()
@@ -846,17 +890,9 @@ class Operator:
             kopf_decorator = kopf_decorator_fn(
                 *hook._hook_args, registry=self.registry, **hook._hook_kwargs
             )
-            hook = log_hook(hook)
             hook = handle_hook_exception(hook)
+            hook = log_hook(hook)
             kopf_decorator(hook)
-
-    async def get_tenant(self, tenant_fqn: str) -> Tenant:
-        """
-        Helper method that calls `get_tenant` - providing common operator-level args.
-        """
-        return await get_tenant(
-            self.kube_client, tenant_fqn, endpoint_overrides=self.endpoint_overrides
-        )
 
     @hook("startup")
     async def startup(self, **kwargs):
@@ -889,9 +925,8 @@ class Operator:
         Called when a bfiola.dev/v1/MinioBucket resource is created
         """
         spec = BucketSpec.model_validate(body["spec"])
-        tenant = await self.get_tenant(spec.tenant)
-        bucket = await resolve_minio_bucket_spec(self.kube_client, spec)
-        await create_minio_bucket(tenant, bucket)
+        bucket = await resolve_minio_bucket_spec(self.kube_client, spec, body)
+        await create_minio_bucket(bucket)
         patch.status["currentSpec"] = spec.model_dump()
 
     @hook("update", "bfiola.dev", "v1", "miniobuckets")
@@ -905,21 +940,21 @@ class Operator:
 
         # handle updates to resources that previously failed to create
         if not current_spec:
-            tenant = await self.get_tenant(new_spec.tenant)
-            bucket = await resolve_minio_bucket_spec(self.kube_client, new_spec)
-            await create_minio_bucket(tenant, bucket)
+            bucket = await resolve_minio_bucket_spec(self.kube_client, new_spec, body)
+            await create_minio_bucket(bucket)
             patch.status["currentSpec"] = new_spec.model_dump()
             return
 
         current_spec = BucketSpec.model_validate(current_spec)
-        tenant = await self.get_tenant(current_spec.tenant)
-        immutable = {("tenant",), ("name",)}
+        immutable = {("tenantRef",), ("name",)}
         diff = get_diff(current_spec, new_spec)
         diff = filter_immutable_diff_items(diff, immutable, kopf_logger)
         for item in diff:
             current_spec = apply_diff_item(current_spec, item)
-            bucket = await resolve_minio_bucket_spec(self.kube_client, current_spec)
-            await update_minio_bucket(tenant, bucket)
+            bucket = await resolve_minio_bucket_spec(
+                self.kube_client, current_spec, body
+            )
+            await update_minio_bucket(bucket)
             patch.status["currentSpec"] = current_spec.model_dump()
 
     @hook("delete", "bfiola.dev", "v1", "miniobuckets")
@@ -930,11 +965,12 @@ class Operator:
         try:
             current_spec = body["status"]["currentSpec"]
             current_spec = BucketSpec.model_validate(current_spec)
-            tenant = await self.get_tenant(current_spec.tenant)
-            bucket = await resolve_minio_bucket_spec(self.kube_client, current_spec)
+            bucket = await resolve_minio_bucket_spec(
+                self.kube_client, current_spec, body
+            )
         except Exception as e:
             return
-        await delete_minio_bucket(tenant, bucket)
+        await delete_minio_bucket(bucket)
 
     @hook("create", "bfiola.dev", "v1", "miniousers")
     async def on_user_create(self, *, body: kopf.Body, patch: kopf.Patch, **kwargs):
@@ -942,12 +978,11 @@ class Operator:
         Called when a bfiola.dev/v1/MinioUser resource is created
         """
         spec = UserSpec.model_validate(body["spec"])
-        tenant = await self.get_tenant(spec.tenant)
         # define secret key ref namespace if omitted
         if spec.secret_key_ref.namespace is None:
             spec.secret_key_ref.namespace = resource_namespace(body)
-        user = await resolve_minio_user_spec(self.kube_client, spec)
-        await create_minio_user(tenant, user)
+        user = await resolve_minio_user_spec(self.kube_client, spec, body)
+        await create_minio_user(user)
         patch.status["currentSpec"] = spec.model_dump(by_alias=True)
 
     @hook("update", "bfiola.dev", "v1", "miniousers")
@@ -964,21 +999,19 @@ class Operator:
 
         # handle updates to resources that previously failed to create
         if not current_spec:
-            tenant = await self.get_tenant(new_spec.tenant)
-            user = await resolve_minio_user_spec(self.kube_client, new_spec)
-            await create_minio_user(tenant, user)
+            user = await resolve_minio_user_spec(self.kube_client, new_spec, body)
+            await create_minio_user(user)
             patch.status["currentSpec"] = new_spec.model_dump()
             return
 
         current_spec = UserSpec.model_validate(current_spec)
-        tenant = await self.get_tenant(current_spec.tenant)
-        immutable = {("tenant",), ("accessKey",)}
+        immutable = {("tenantRef",), ("accessKey",)}
         diff = get_diff(current_spec, new_spec)
         diff = filter_immutable_diff_items(diff, immutable, kopf_logger)
         for item in diff:
             current_spec = apply_diff_item(current_spec, item)
-            user = await resolve_minio_user_spec(self.kube_client, current_spec)
-            await update_minio_user(tenant, user)
+            user = await resolve_minio_user_spec(self.kube_client, current_spec, body)
+            await update_minio_user(user)
             patch.status["currentSpec"] = current_spec.model_dump()
 
     @hook("delete", "bfiola.dev", "v1", "miniousers")
@@ -989,11 +1022,10 @@ class Operator:
         try:
             current_spec = body["status"]["currentSpec"]
             current_spec = UserSpec.model_validate(current_spec)
-            tenant = await self.get_tenant(current_spec.tenant)
-            user = await resolve_minio_user_spec(self.kube_client, current_spec)
+            user = await resolve_minio_user_spec(self.kube_client, current_spec, body)
         except Exception as e:
             return
-        await delete_minio_user(tenant, user)
+        await delete_minio_user(user)
 
     @hook("create", "bfiola.dev", "v1", "miniopolicies")
     async def on_policy_create(self, body: kopf.Body, patch: kopf.Patch, **kwargs):
@@ -1001,9 +1033,8 @@ class Operator:
         Called when a bfiola.dev/v1/MinioPolicy resource is created
         """
         spec = PolicySpec.model_validate(body["spec"])
-        tenant = await self.get_tenant(spec.tenant)
-        policy = await resolve_minio_policy_spec(self.kube_client, spec)
-        await create_minio_policy(tenant, policy)
+        policy = await resolve_minio_policy_spec(self.kube_client, spec, body)
+        await create_minio_policy(policy)
         patch.status["currentSpec"] = spec.model_dump(by_alias=True)
 
     @hook("update", "bfiola.dev", "v1", "miniopolicies")
@@ -1017,21 +1048,21 @@ class Operator:
 
         # handle updates to resources that previously failed to create
         if not current_spec:
-            tenant = await self.get_tenant(new_spec.tenant)
-            policy = await resolve_minio_policy_spec(self.kube_client, new_spec)
-            await create_minio_policy(tenant, policy)
+            policy = await resolve_minio_policy_spec(self.kube_client, new_spec, body)
+            await create_minio_policy(policy)
             patch.status["currentSpec"] = new_spec.model_dump(by_alias=True)
             return
 
         current_spec = PolicySpec.model_validate(current_spec)
-        tenant = await self.get_tenant(current_spec.tenant)
-        immutable = {("tenant",), ("name",)}
+        immutable = {("tenantRef",), ("name",)}
         diff = get_diff(current_spec, new_spec)
         diff = filter_immutable_diff_items(diff, immutable, kopf_logger)
         for item in diff:
             current_spec = apply_diff_item(current_spec, item)
-            policy = await resolve_minio_policy_spec(self.kube_client, current_spec)
-            await update_minio_policy(tenant, policy)
+            policy = await resolve_minio_policy_spec(
+                self.kube_client, current_spec, body
+            )
+            await update_minio_policy(policy)
             patch.status["currentSpec"] = current_spec.model_dump(by_alias=True)
 
     @hook("delete", "bfiola.dev", "v1", "miniopolicies")
@@ -1042,11 +1073,12 @@ class Operator:
         try:
             current_spec = body["status"]["currentSpec"]
             current_spec = PolicySpec.model_validate(current_spec)
-            tenant = await self.get_tenant(current_spec.tenant)
-            policy = await resolve_minio_policy_spec(self.kube_client, current_spec)
+            policy = await resolve_minio_policy_spec(
+                self.kube_client, current_spec, body
+            )
         except Exception as e:
             return
-        await delete_minio_policy(tenant, policy)
+        await delete_minio_policy(policy)
 
     @hook("create", "bfiola.dev", "v1", "miniopolicybindings")
     async def on_policy_binding_create(
@@ -1056,9 +1088,10 @@ class Operator:
         Called when a bfiola.dev/v1/MinioPolicyBinding resource is created
         """
         spec = PolicyBindingSpec.model_validate(body["spec"])
-        tenant = await self.get_tenant(spec.tenant)
-        policy_binding = await resolve_minio_policy_binding_spec(self.kube_client, spec)
-        await create_minio_policy_binding(tenant, policy_binding)
+        policy_binding = await resolve_minio_policy_binding_spec(
+            self.kube_client, spec, body
+        )
+        await create_minio_policy_binding(policy_binding)
         patch.status["currentSpec"] = spec.model_dump(by_alias=True)
 
     @hook("update", "bfiola.dev", "v1", "miniopolicybindings")
@@ -1074,30 +1107,28 @@ class Operator:
 
         # handle updates to resources that previously failed to create
         if not current_spec:
-            tenant = await self.get_tenant(new_spec.tenant)
             policy_binding = await resolve_minio_policy_binding_spec(
-                self.kube_client, new_spec
+                self.kube_client, new_spec, body
             )
-            await create_minio_policy_binding(tenant, policy_binding)
+            await create_minio_policy_binding(policy_binding)
             patch.status["currentSpec"] = new_spec.model_dump(by_alias=True)
             return
 
         current_spec = PolicyBindingSpec.model_validate(current_spec)
-        tenant = await self.get_tenant(current_spec.tenant)
-        immutable: set[tuple[str, ...]] = {("tenant",)}
+        immutable: set[tuple[str, ...]] = {("tenantRef",)}
         diff = get_diff(current_spec, new_spec)
         diff = filter_immutable_diff_items(diff, immutable, kopf_logger)
         for item in diff:
             policy_binding = await resolve_minio_policy_binding_spec(
-                self.kube_client, current_spec
+                self.kube_client, current_spec, body
             )
-            await delete_minio_policy_binding(tenant, policy_binding)
+            await delete_minio_policy_binding(policy_binding)
             patch.status["currentSpec"] = None
             current_spec = apply_diff_item(current_spec, item)
             policy_binding = await resolve_minio_policy_binding_spec(
-                self.kube_client, current_spec
+                self.kube_client, current_spec, body
             )
-            await create_minio_policy_binding(tenant, policy_binding)
+            await create_minio_policy_binding(policy_binding)
             patch.status["currentSpec"] = current_spec.model_dump(by_alias=True)
 
     @hook("delete", "bfiola.dev", "v1", "miniopolicybindings")
@@ -1110,13 +1141,12 @@ class Operator:
         try:
             current_spec = body["status"]["currentSpec"]
             current_spec = PolicyBindingSpec.model_validate(current_spec)
-            tenant = await self.get_tenant(current_spec.tenant)
             policy_binding = await resolve_minio_policy_binding_spec(
-                self.kube_client, current_spec
+                self.kube_client, current_spec, body
             )
         except Exception as e:
             return
-        await delete_minio_policy_binding(tenant, policy_binding)
+        await delete_minio_policy_binding(policy_binding)
 
     async def run(self):
         """
