@@ -11,8 +11,8 @@ This is primarily a stopgap until support for minio resources lands in the offic
 To deploy the operator:
 
 - Deploy the [CRDs](./manifests/crds.yaml)
-- Deploy the operator ([example](./manifests/example_deployment.yaml))
-- Deploy some custom resources ([example](./manifests/example_resources.yaml))
+- Deploy the operator ([example](./manifests/example-deployment.yaml))
+- Deploy some custom resources ([example](./manifests/example-resources.yaml))
 
 ### Image
 
@@ -66,7 +66,7 @@ This will:
 - Install the minio operator
 - Create a minio tenant
 - Apply the [custom resources](./manifests/crds.yaml)
-- Apply the [example resources](./manifests/example_resources.yaml)
+- Apply the [example resources](./manifests/example-resources.yaml)
 - Set a rule in /etc/hosts for the internal service name of the minio tenant
 - Waits for minio tenant to finish deploying
 - Forward the minio tenant service to localhost
