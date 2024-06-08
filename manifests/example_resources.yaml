@@ -4,7 +4,14 @@ metadata:
   name: test
 spec:
   name: test
-  tenant: minio-23b8d64e/minio
+  tenant: minio-tenant/myminio
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: user
+stringData:
+  secretKey: password
 ---
 apiVersion: bfiola.dev/v1
 kind: MinioUser
@@ -12,8 +19,10 @@ metadata:
   name: test
 spec:
   accessKey: test
-  secretKey: password
-  tenant: minio-23b8d64e/minio
+  secretKeyRef:
+    name: user
+    key: secretKey
+  tenant: minio-tenant/myminio
 ---
 apiVersion: bfiola.dev/v1
 kind: MinioPolicy
@@ -21,7 +30,7 @@ metadata:
   name: test
 spec:
   name: test
-  tenant: minio-23b8d64e/minio
+  tenant: minio-tenant/myminio
   statement:
     - effect: "Allow"
       action:
@@ -47,4 +56,4 @@ metadata:
 spec:
   policy: test
   user: test
-  tenant: minio-23b8d64e/minio
+  tenant: minio-tenant/myminio

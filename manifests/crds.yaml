@@ -59,8 +59,15 @@ spec:
               properties:
                 accessKey:
                   type: string
-                secretKey:
-                  type: string
+                secretKeyRef:
+                  type: object
+                  properties:
+                    namespace:
+                      type: string
+                    name:
+                      type: string
+                    key:
+                      type: string
                 tenant:
                   type: string
             status:
