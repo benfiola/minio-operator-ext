@@ -4,7 +4,9 @@ metadata:
   name: test
 spec:
   name: test
-  tenant: minio-tenant/myminio
+  tenantRef:
+    namespace: minio-tenant
+    name: myminio
 ---
 apiVersion: v1
 kind: Secret
@@ -22,7 +24,9 @@ spec:
   secretKeyRef:
     name: user
     key: secretKey
-  tenant: minio-tenant/myminio
+  tenantRef:
+    namespace: minio-tenant
+    name: myminio
 ---
 apiVersion: bfiola.dev/v1
 kind: MinioPolicy
@@ -30,7 +34,6 @@ metadata:
   name: test
 spec:
   name: test
-  tenant: minio-tenant/myminio
   statement:
     - effect: "Allow"
       action:
@@ -48,6 +51,9 @@ spec:
         - "s3:ListBucketMultipartUploads"
       resource:
         - "arn:aws:s3:::test"
+  tenantRef:
+    namespace: minio-tenant
+    name: myminio
 ---
 apiVersion: bfiola.dev/v1
 kind: MinioPolicyBinding
@@ -55,5 +61,7 @@ metadata:
   name: test
 spec:
   policy: test
+  tenantRef:
+    namespace: minio-tenant
+    name: myminio
   user: test
-  tenant: minio-tenant/myminio

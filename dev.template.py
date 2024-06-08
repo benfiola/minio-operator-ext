@@ -1,6 +1,7 @@
 import asyncio
 import pathlib
 
+from minio_operator_ext.logs import configure_logging
 from minio_operator_ext.operator import Operator
 
 
