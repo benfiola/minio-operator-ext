@@ -326,6 +326,46 @@ class User(BaseModel):
     tenant: Tenant
 
 
+class GroupSpec(BaseModel):
+    """
+    Represents the spec field of a bfiola.dev/MinioGroup resource.
+    """
+
+    name: str
+    tenant_ref: SpecResourceRef = pydantic.Field(alias="tenantRef")
+
+
+class Group(BaseModel):
+    """
+    Represents a group with all references resolved
+    """
+
+    name: str
+    resource: ResourceRef
+    tenant: Tenant
+
+
+class GroupBindingSpec(BaseModel):
+    """
+    Represents the spec field of a bfiola.dev/MinioGroupBinding resource.
+    """
+
+    group: str
+    tenant_ref: SpecResourceRef = pydantic.Field(alias="tenantRef")
+    user: str
+
+
+class GroupBinding(BaseModel):
+    """
+    Represents a group binding with all references resolved
+    """
+
+    group: str
+    resource: ResourceRef
+    tenant: Tenant
+    user: str
+
+
 class PolicyStatement(BaseModel):
     """
     Represents the spec.statement subfield of a bfiola.dev/MinioPolicy resource.
@@ -566,7 +606,7 @@ async def resolve_minio_bucket_spec(
 
 async def create_minio_bucket(bucket: Bucket):
     """
-    Creates a new minio bucket given the provided bucket
+    Creates a new minio bucket given the provided bucket resource
     """
     async with create_minio_client(bucket.tenant) as minio_client:
 
@@ -585,7 +625,7 @@ async def create_minio_bucket(bucket: Bucket):
 
 async def update_minio_bucket(bucket: Bucket):
     """
-    Updates an existing minio bucket given the provided bucket
+    Updates an existing minio bucket given the provided bucket resource
     """
     async with create_minio_client(bucket.tenant) as minio_client:
 
@@ -597,7 +637,7 @@ async def update_minio_bucket(bucket: Bucket):
 
 async def delete_minio_bucket(bucket: Bucket):
     """
-    Deletes an existing minio bucket given the provided bucket
+    Deletes an existing minio bucket given the provided bucket resource
     """
     async with create_minio_client(bucket.tenant) as minio_client:
 
@@ -638,7 +678,7 @@ async def resolve_minio_user_spec(
 
 async def create_minio_user(user: User):
     """
-    Creates a new user given the provided user
+    Creates a new user given the provided user resource
     """
     async with create_minio_admin_client(user.tenant) as minio_admin_client:
 
@@ -658,7 +698,7 @@ async def create_minio_user(user: User):
 
 async def update_minio_user(user: User):
     """
-    Updates an existing user given the provided user
+    Updates an existing user given the provided user resource
     """
     async with create_minio_admin_client(user.tenant) as minio_admin_client:
 
@@ -670,13 +710,147 @@ async def update_minio_user(user: User):
 
 async def delete_minio_user(user: User):
     """
-    Deletes an existing user given the provided user
+    Deletes an existing user given the provided user resource
     """
     async with create_minio_admin_client(user.tenant) as minio_admin_client:
 
         def inner():
             try:
                 minio_admin_client.user_remove(user.access_key)
+            except minio.error.MinioAdminException as e:
+                if e._code == "404":
+                    return
+                raise e
+
+        await run_sync(inner)
+
+
+async def resolve_minio_group_spec(
+    kube_client: kubernetes.client.ApiClient, group_spec: GroupSpec, body: kopf.Body
+) -> Group:
+    """
+    Resolves a group spec to a group - translating references to actual values.
+    """
+    namespace = resource_namespace(body)
+    name: str = body["metadata"]["name"]
+    resource = ResourceRef(name=name, namespace=namespace)
+    tenant_ref = group_spec.tenant_ref.resource_ref(namespace)
+    tenant = await get_tenant(kube_client, tenant_ref)
+    return Group(
+        name=group_spec.name,
+        resource=resource,
+        tenant=tenant,
+    )
+
+
+async def create_minio_group(group: Group):
+    """
+    Creates a new group given the provided group resource
+    """
+    async with create_minio_admin_client(group.tenant) as minio_admin_client:
+
+        def inner():
+            # NOTE: the `group_add` endpoint will succeed even when a group already exists
+            try:
+                minio_admin_client.group_info(group.name)
+                raise OperatorError(f"group already exists: {group.name}")
+            except minio.error.MinioAdminException as e:
+                if e._code != "404":
+                    raise e
+
+            # NOTE: this api is incorrectly typed (the member list is typed as 'str' - should be 'list[str]')
+            minio_admin_client.group_add(group.name, cast(str, []))
+
+        await run_sync(inner)
+
+
+async def update_minio_group(group: Group):
+    """
+    Updates an existing group given the provided group resource
+    """
+    async with create_minio_admin_client(group.tenant) as minio_admin_client:
+
+        def inner():
+            pass
+
+        await run_sync(inner)
+
+
+async def delete_minio_group(group: Group):
+    """
+    Deletes an existing group given the provided group resource
+    """
+    async with create_minio_admin_client(group.tenant) as minio_admin_client:
+
+        def inner():
+            try:
+                minio_admin_client.group_remove(group.name)
+            except minio.error.MinioAdminException as e:
+                if e._code == "404":
+                    return
+                raise e
+
+        await run_sync(inner)
+
+
+async def resolve_minio_group_binding_spec(
+    kube_client: kubernetes.client.ApiClient,
+    group_binding_spec: GroupBindingSpec,
+    body: kopf.Body,
+) -> GroupBinding:
+    """
+    Resolves a group binding spec to a group binding - translating references to actual values.
+    """
+    namespace = resource_namespace(body)
+    name: str = body["metadata"]["name"]
+    resource = ResourceRef(name=name, namespace=namespace)
+    tenant_ref = group_binding_spec.tenant_ref.resource_ref(namespace)
+    tenant = await get_tenant(kube_client, tenant_ref)
+    return GroupBinding(
+        group=group_binding_spec.group,
+        resource=resource,
+        tenant=tenant,
+        user=group_binding_spec.user,
+    )
+
+
+async def create_minio_group_binding(group_binding: GroupBinding):
+    """
+    Creates a new group binding given the provided group binding resource
+    """
+    async with create_minio_admin_client(group_binding.tenant) as minio_admin_client:
+
+        def inner():
+            # NOTE: ensure group already exists before calling 'group_add' to modify members
+            try:
+                minio_admin_client.group_info(group_binding.group)
+            except minio.error.MinioAdminException as e:
+                if e._code != "404":
+                    raise e
+                raise OperatorError(
+                    f"group does not exist: {group_binding.group}", recoverable=True
+                )
+
+            # NOTE: this api is incorrectly typed (the member list is typed as 'str' - should be 'list[str]')
+            minio_admin_client.group_add(
+                group_binding.group, cast(str, [group_binding.user])
+            )
+
+        await run_sync(inner)
+
+
+async def delete_minio_group_binding(group_binding: GroupBinding):
+    """
+    Deletes an existing group binding given the provided group binding resource
+    """
+    async with create_minio_admin_client(group_binding.tenant) as minio_admin_client:
+
+        def inner():
+            try:
+                # NOTE: this api is incorrectly typed (the member list is typed as 'str' - should be 'list[str]')
+                minio_admin_client.group_remove(
+                    group_binding.group, cast(str, [group_binding.user])
+                )
             except minio.error.MinioAdminException as e:
                 if e._code == "404":
                     return
@@ -1041,6 +1215,123 @@ class Operator:
         except Exception as e:
             return
         await delete_minio_user(user)
+
+    @hook("create", "bfiola.dev", "v1", "miniogroups")
+    async def on_group_create(self, *, body: kopf.Body, patch: kopf.Patch, **kwargs):
+        """
+        Called when a bfiola.dev/v1/MinioGroup resource is created
+        """
+        spec = GroupSpec.model_validate(body["spec"])
+        group = await resolve_minio_group_spec(self.kube_client, spec, body)
+        await create_minio_group(group)
+        patch.status["currentSpec"] = spec.model_dump(by_alias=True)
+
+    @hook("update", "bfiola.dev", "v1", "miniogroups")
+    async def on_group_update(self, *, body: kopf.Body, patch: kopf.Patch, **kwargs):
+        """
+        Called when a bfiola.dev/v1/MinioGroup resource is updated
+        """
+        kopf_logger: logging.Logger = kwargs["logger"]
+        new_spec = GroupSpec.model_validate(body["spec"])
+        current_spec = body["status"].get("currentSpec")
+
+        # handle updates to resources that previously failed to create
+        if not current_spec:
+            group = await resolve_minio_group_spec(self.kube_client, new_spec, body)
+            await create_minio_group(group)
+            patch.status["currentSpec"] = new_spec.model_dump()
+            return
+
+        current_spec = GroupSpec.model_validate(current_spec)
+        immutable = {("tenantRef",), ("name",)}
+        diff = get_diff(current_spec, new_spec)
+        diff = filter_immutable_diff_items(diff, immutable, kopf_logger)
+        for item in diff:
+            current_spec = apply_diff_item(current_spec, item)
+            group = await resolve_minio_group_spec(self.kube_client, current_spec, body)
+            await update_minio_group(group)
+            patch.status["currentSpec"] = current_spec.model_dump()
+
+    @hook("delete", "bfiola.dev", "v1", "miniogroups")
+    async def on_group_delete(self, body: kopf.Body, **kwargs):
+        """
+        Called when a bfiola.dev/v1/MinioGroup resource is deleted
+        """
+        try:
+            current_spec = body["status"]["currentSpec"]
+            current_spec = GroupSpec.model_validate(current_spec)
+            group = await resolve_minio_group_spec(self.kube_client, current_spec, body)
+        except Exception as e:
+            return
+        await delete_minio_group(group)
+
+    @hook("create", "bfiola.dev", "v1", "miniogroupbindings")
+    async def on_group_binding_create(
+        self, body: kopf.Body, patch: kopf.Patch, **kwargs
+    ):
+        """
+        Called when a bfiola.dev/v1/MinioGroupBinding resource is created
+        """
+        spec = GroupBindingSpec.model_validate(body["spec"])
+        group_binding = await resolve_minio_group_binding_spec(
+            self.kube_client, spec, body
+        )
+        await create_minio_group_binding(group_binding)
+        patch.status["currentSpec"] = spec.model_dump(by_alias=True)
+
+    @hook("update", "bfiola.dev", "v1", "miniogroupbindings")
+    async def on_group_binding_update(
+        self, *, body: kopf.Body, patch: kopf.Patch, **kwargs
+    ):
+        """
+        Called when a bfiola.dev/v1/MinioGroupBinding resource is updated
+        """
+        kopf_logger: logging.Logger = kwargs["logger"]
+        new_spec = GroupBindingSpec.model_validate(body["spec"])
+        current_spec = body["status"].get("currentSpec")
+
+        # handle updates to resources that previously failed to create
+        if not current_spec:
+            group_binding = await resolve_minio_group_binding_spec(
+                self.kube_client, new_spec, body
+            )
+            await create_minio_group_binding(group_binding)
+            patch.status["currentSpec"] = new_spec.model_dump(by_alias=True)
+            return
+
+        current_spec = GroupBindingSpec.model_validate(current_spec)
+        immutable: set[tuple[str, ...]] = {("tenantRef",)}
+        diff = get_diff(current_spec, new_spec)
+        diff = filter_immutable_diff_items(diff, immutable, kopf_logger)
+        for item in diff:
+            group_binding = await resolve_minio_group_binding_spec(
+                self.kube_client, current_spec, body
+            )
+            await delete_minio_group_binding(group_binding)
+            patch.status["currentSpec"] = None
+            current_spec = apply_diff_item(current_spec, item)
+            group_binding = await resolve_minio_group_binding_spec(
+                self.kube_client, current_spec, body
+            )
+            await create_minio_group_binding(group_binding)
+            patch.status["currentSpec"] = current_spec.model_dump(by_alias=True)
+
+    @hook("delete", "bfiola.dev", "v1", "miniogroupbindings")
+    async def on_group_binding_delete(
+        self, body: kopf.Body, patch: kopf.Patch, **kwargs
+    ):
+        """
+        Called when a bfiola.dev/v1/MinioGroupBinding resource is deleted
+        """
+        try:
+            current_spec = body["status"]["currentSpec"]
+            current_spec = GroupBindingSpec.model_validate(current_spec)
+            group_binding = await resolve_minio_group_binding_spec(
+                self.kube_client, current_spec, body
+            )
+        except Exception as e:
+            return
+        await delete_minio_group_binding(group_binding)
 
     @hook("create", "bfiola.dev", "v1", "miniopolicies")
     async def on_policy_create(self, body: kopf.Body, patch: kopf.Patch, **kwargs):

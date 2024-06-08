@@ -37,7 +37,7 @@ echo "deploy custom resources"
 kubectl apply -f ./manifests/crds.yaml
 
 echo "deploy test resources"
-kubectl apply -f ./manifests/example_resources.yaml
+kubectl apply -f ./manifests/example-resources.yaml
 
 echo "adding /etc/hosts entry for minio tenant service"
 if [ ! -f "/etc/hosts.bak" ]; then

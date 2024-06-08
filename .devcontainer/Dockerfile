@@ -8,6 +8,9 @@ ENV DEBIAN_FRONTEND="noninteractive"
 
 RUN apt -y update
 
+# install standalone tooling
+RUN apt -y install vim
+
 # install python dependencies separately because it takes a long time
 RUN apt -y install \ 
         build-essential \

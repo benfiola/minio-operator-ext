@@ -112,6 +112,114 @@ spec:
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
+  name: miniogroups.bfiola.dev
+spec:
+  group: bfiola.dev
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                name:
+                  type: string
+                tenantRef:
+                  type: object
+                  properties:
+                    namespace:
+                      type: string
+                    name:
+                      type: string
+            status:
+              type: object
+              properties:
+                currentSpec:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+      additionalPrinterColumns:
+        - name: Tenant Namespace
+          type: string
+          description: Tenant Namespace
+          jsonPath: .status.currentSpec.tenantRef.namespace
+        - name: Tenant Name
+          type: string
+          description: Tenant Name
+          jsonPath: .status.currentSpec.tenantRef.name
+        - name: Name
+          type: string
+          description: Name
+          jsonPath: .status.currentSpec.name
+  scope: Namespaced
+  names:
+    plural: miniogroups
+    singular: miniogroup
+    kind: MinioGroup
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: miniogroupbindings.bfiola.dev
+spec:
+  group: bfiola.dev
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                user:
+                  type: string
+                group:
+                  type: string
+                tenantRef:
+                  type: object
+                  properties:
+                    namespace:
+                      type: string
+                    name:
+                      type: string
+            status:
+              type: object
+              properties:
+                currentSpec:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+      additionalPrinterColumns:
+        - name: Tenant Namespace
+          type: string
+          description: Tenant Namespace
+          jsonPath: .status.currentSpec.tenantRef.namespace
+        - name: Tenant Name
+          type: string
+          description: Tenant Name
+          jsonPath: .status.currentSpec.tenantRef.name
+        - name: User
+          type: string
+          description: User
+          jsonPath: .status.currentSpec.user
+        - name: Group
+          type: string
+          description: Group
+          jsonPath: .status.currentSpec.group
+  scope: Namespaced
+  names:
+    plural: miniogroupbindings
+    singular: miniogroupbinding
+    kind: MinioGroupBinding
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
   name: miniopolicies.bfiola.dev
 spec:
   group: bfiola.dev
