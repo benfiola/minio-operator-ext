@@ -206,6 +206,8 @@ spec:
                   type: string
                 user:
                   type: string
+                group:
+                  type: string
             status:
               type: object
               properties:

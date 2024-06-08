@@ -360,13 +360,23 @@ class PolicyBindingSpec(BaseModel):
     Represents the spec field of a bfiola.dev/MinioPolicyBinding resource.
     """
 
-    user: str
+    group: str | None = None
+    user: str | None = None
     policy: str
     tenant_ref: SpecResourceRef = pydantic.Field(alias="tenantRef")
 
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def ensure_group_or_user_set(cls, data: Any) -> Any:
+        fields = [data.get("group"), data.get("user")]
+        if all(fields) or not any(fields):
+            raise ValueError(f"only one of [group, user] must be provided")
+        return data
+
 
 class PolicyBinding(BaseModel):
-    user: str
+    group: str | None
+    user: str | None
     policy: str
     resource: ResourceRef
     tenant: Tenant
@@ -768,6 +778,7 @@ async def resolve_minio_policy_binding_spec(
     tenant_ref = policy_binding_spec.tenant_ref.resource_ref(namespace)
     tenant = await get_tenant(kube_client, tenant_ref)
     return PolicyBinding(
+        group=policy_binding_spec.group,
         policy=policy_binding_spec.policy,
         resource=resource,
         tenant=tenant,
@@ -784,7 +795,9 @@ async def create_minio_policy_binding(policy_binding: PolicyBinding):
         def inner():
             try:
                 minio_admin_client.policy_set(
-                    policy_binding.policy, user=policy_binding.user
+                    policy_binding.policy,
+                    group=policy_binding.group,
+                    user=policy_binding.user,
                 )
             except minio.error.MinioAdminException as e:
                 if e._code == "400":
@@ -804,7 +817,9 @@ async def delete_minio_policy_binding(policy_binding: PolicyBinding):
         def inner():
             try:
                 minio_admin_client.policy_unset(
-                    policy_binding.policy, user=policy_binding.user
+                    policy_binding.policy,
+                    group=policy_binding.group,
+                    user=policy_binding.user,
                 )
             except minio.error.MinioAdminException as e:
                 if e._code == "400":
