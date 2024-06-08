@@ -1,9 +1,9 @@
 apiVersion: bfiola.dev/v1
 kind: MinioBucket
 metadata:
-  name: test
+  name: bucket
 spec:
-  name: test
+  name: bucket
   tenantRef:
     namespace: minio-tenant
     name: myminio
@@ -18,9 +18,9 @@ stringData:
 apiVersion: bfiola.dev/v1
 kind: MinioUser
 metadata:
-  name: test
+  name: user
 spec:
-  accessKey: test
+  accessKey: user
   secretKeyRef:
     name: user
     key: secretKey
@@ -29,11 +29,32 @@ spec:
     name: myminio
 ---
 apiVersion: bfiola.dev/v1
+kind: MinioGroup
+metadata:
+  name: group
+spec:
+  name: group
+  tenantRef:
+    namespace: minio-tenant
+    name: myminio
+---
+apiVersion: bfiola.dev/v1
+kind: MinioGroupBinding
+metadata:
+  name: user-to-group
+spec:
+  group: group
+  tenantRef:
+    namespace: minio-tenant
+    name: myminio
+  user: user
+---
+apiVersion: bfiola.dev/v1
 kind: MinioPolicy
 metadata:
-  name: test
+  name: policy
 spec:
-  name: test
+  name: policy
   statement:
     - effect: "Allow"
       action:
@@ -43,14 +64,14 @@ spec:
         - "s3:PutObject"
         - "s3:GetObject"
       resource:
-        - "arn:aws:s3:::test/*"
+        - "arn:aws:s3:::bucket/*"
     - effect: "Allow"
       action:
         - "s3:GetBucketLocation"
         - "s3:ListBucket"
         - "s3:ListBucketMultipartUploads"
       resource:
-        - "arn:aws:s3:::test"
+        - "arn:aws:s3:::bucket"
   tenantRef:
     namespace: minio-tenant
     name: myminio
@@ -58,10 +79,21 @@ spec:
 apiVersion: bfiola.dev/v1
 kind: MinioPolicyBinding
 metadata:
-  name: test
+  name: user-to-policy
 spec:
-  policy: test
+  policy: policy
   tenantRef:
     namespace: minio-tenant
     name: myminio
-  user: test
+  user: user
+---
+apiVersion: bfiola.dev/v1
+kind: MinioPolicyBinding
+metadata:
+  name: group-to-policy
+spec:
+  group: group
+  policy: policy
+  tenantRef:
+    namespace: minio-tenant
+    name: myminio

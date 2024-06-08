@@ -37,6 +37,8 @@ rules:
     resources:
       - miniousers
       - miniobuckets
+      - miniogroups
+      - miniogroupbindings
       - miniopolicies
       - miniopolicybindings
     verbs:
