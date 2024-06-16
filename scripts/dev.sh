@@ -44,7 +44,7 @@ if [ ! -f "/etc/hosts.bak" ]; then
   cp /etc/hosts /etc/hosts.bak
 fi
 cp /etc/hosts.bak /etc/hosts
-echo "127.0.0.1 minio.minio-tenant.svc.cluster.local" >> /etc/hosts
+echo "127.0.0.1 minio.minio-tenant.svc" >> /etc/hosts
 
 echo "waiting for minio tenant to be ready"
 while true; do
