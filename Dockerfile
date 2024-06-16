@@ -1,5 +1,7 @@
 FROM python:3.10.12 as operator
 
+EXPOSE 8888
+
 WORKDIR /app
 
 ADD pyproject.toml pyproject.toml
