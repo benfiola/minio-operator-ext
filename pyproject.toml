@@ -3,12 +3,9 @@ name = "minio-operator-ext"
 version = "0.0.0"
 dependencies = [
     "click",
-    "kopf",
-    "kubernetes",
     "minio",
-    "pydantic",
+    "bfiola-operator-core==0.0.1",
     "python-dotenv",
-    "uvloop"
 ]
 
 [project.optional-dependencies]
