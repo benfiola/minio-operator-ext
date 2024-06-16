@@ -2,7 +2,7 @@
 set -e
 latest="${LATEST:-0}"
 push="${PUSH:-0}"
-version="1.0.2"
+version="1.0.3"
 image="docker.io/benfiola/minio-operator-ext"
 
 confirm() {
