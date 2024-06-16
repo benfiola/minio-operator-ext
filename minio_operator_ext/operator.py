@@ -334,9 +334,7 @@ async def get_tenant(
         raise operator_core.OperatorError(
             f"port not found in service: {operator_core.resource_fqn(service)}"
         )
-    endpoint = (
-        f"{service_ref.name}.{service_ref.namespace}.svc.cluster.local:{service_port}"
-    )
+    endpoint = f"{service_ref.name}.{service_ref.namespace}.svc:{service_port}"
 
     return Tenant(
         access_key=access_key,
