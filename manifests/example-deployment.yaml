@@ -58,6 +58,7 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: minio-operator-ext
+    namespace: default
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -76,7 +77,7 @@ spec:
       containers:
         - args:
             - run
-          image: docker.io/benfiola/minio-operator-ext:0.0.1
+          image: docker.io/benfiola/minio-operator-ext:latest
           name: operator
           livenessProbe:
             httpGet:
