@@ -57,7 +57,7 @@ From the project root, run the following to create a development cluster to test
 
 ```shell
 cd /workspaces/minio-operator-ext
-./scripts/dev-cluster.sh
+./scripts/dev.sh
 ```
 
 This will:
