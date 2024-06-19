@@ -28,50 +28,6 @@ async def temporary_file(**kwargs) -> AsyncGenerator[pathlib.Path, None]:
         yield pathlib.Path(handle.name)
 
 
-class SpecResourceRef(operator_core.BaseModel):
-    """
-    Represents a reference to another kubernetes resource as defined in a resource spec.
-
-    The 'namespace' field is optional - if 'None' assumed to be the current namespace
-    of the containing object.
-    """
-
-    name: str
-    namespace: str | None = None
-
-    def resource_ref(self, default_namespace: str) -> "ResourceRef":
-        """
-        Convenience method to create a 'ResourceRef' object.
-
-        Will set the namespace to 'default_namespace' if namespace is None.
-        """
-        return ResourceRef(
-            name=self.name, namespace=self.namespace or default_namespace
-        )
-
-
-class SpecSecretKeyRef(SpecResourceRef):
-    """
-    Represents a reference to a key of a kubernetes 'Secret' resource as defined in a resource spec.
-    """
-
-    key: str
-
-
-class ResourceRef(operator_core.BaseModel):
-    """
-    Represents a reference to a kubernetes resource.  Differs from `SpecResourceRef` in that the namespace
-    field *must* be set.
-    """
-
-    name: str
-    namespace: str
-
-    @property
-    def fqn(self) -> str:
-        return f"{self.namespace}/{self.name}"
-
-
 class Tenant(operator_core.BaseModel):
     """
     Represents a simplified data container pointing to a minio.min.io/Tenant resource.
@@ -80,7 +36,7 @@ class Tenant(operator_core.BaseModel):
     access_key: str
     ca_bundle: str | None = None
     endpoint: str
-    resource: ResourceRef
+    resource: operator_core.ResourceRef
     secret_key: str
     secure: bool
 
@@ -91,12 +47,12 @@ class BucketSpec(operator_core.BaseModel):
     """
 
     name: str
-    tenant_ref: SpecResourceRef = pydantic.Field(alias="tenantRef")
+    tenant_ref: operator_core.ResourceRefSpec = pydantic.Field(alias="tenantRef")
 
 
 class Bucket(operator_core.BaseModel):
     name: str
-    resource: ResourceRef
+    resource: operator_core.ResourceRef
     tenant: Tenant
 
 
@@ -106,8 +62,10 @@ class UserSpec(operator_core.BaseModel):
     """
 
     access_key: str = pydantic.Field(alias="accessKey")
-    secret_key_ref: SpecSecretKeyRef = pydantic.Field(alias="secretKeyRef")
-    tenant_ref: SpecResourceRef = pydantic.Field(alias="tenantRef")
+    secret_key_ref: operator_core.ResourceKeyRefSpec = pydantic.Field(
+        alias="secretKeyRef"
+    )
+    tenant_ref: operator_core.ResourceRefSpec = pydantic.Field(alias="tenantRef")
 
 
 class User(operator_core.BaseModel):
@@ -117,7 +75,7 @@ class User(operator_core.BaseModel):
 
     access_key: str
     secret_key: str
-    resource: ResourceRef
+    resource: operator_core.ResourceRef
     tenant: Tenant
 
 
@@ -127,7 +85,7 @@ class GroupSpec(operator_core.BaseModel):
     """
 
     name: str
-    tenant_ref: SpecResourceRef = pydantic.Field(alias="tenantRef")
+    tenant_ref: operator_core.ResourceRefSpec = pydantic.Field(alias="tenantRef")
 
 
 class Group(operator_core.BaseModel):
@@ -136,7 +94,7 @@ class Group(operator_core.BaseModel):
     """
 
     name: str
-    resource: ResourceRef
+    resource: operator_core.ResourceRef
     tenant: Tenant
 
 
@@ -146,7 +104,7 @@ class GroupBindingSpec(operator_core.BaseModel):
     """
 
     group: str
-    tenant_ref: SpecResourceRef = pydantic.Field(alias="tenantRef")
+    tenant_ref: operator_core.ResourceRefSpec = pydantic.Field(alias="tenantRef")
     user: str
 
 
@@ -156,7 +114,7 @@ class GroupBinding(operator_core.BaseModel):
     """
 
     group: str
-    resource: ResourceRef
+    resource: operator_core.ResourceRef
     tenant: Tenant
     user: str
 
@@ -178,14 +136,14 @@ class PolicySpec(operator_core.BaseModel):
 
     statement: list[PolicyStatement]
     name: str
-    tenant_ref: SpecResourceRef = pydantic.Field(alias="tenantRef")
+    tenant_ref: operator_core.ResourceRefSpec = pydantic.Field(alias="tenantRef")
     version: str
 
 
 class Policy(operator_core.BaseModel):
     statement: list[PolicyStatement]
     name: str
-    resource: ResourceRef
+    resource: operator_core.ResourceRef
     tenant: Tenant
     version: str
 
@@ -198,7 +156,7 @@ class PolicyBindingSpec(operator_core.BaseModel):
     group: str | None = None
     user: str | None = None
     policy: str
-    tenant_ref: SpecResourceRef = pydantic.Field(alias="tenantRef")
+    tenant_ref: operator_core.ResourceRefSpec = pydantic.Field(alias="tenantRef")
 
     @pydantic.model_validator(mode="before")
     @classmethod
@@ -213,12 +171,12 @@ class PolicyBinding(operator_core.BaseModel):
     group: str | None
     user: str | None
     policy: str
-    resource: ResourceRef
+    resource: operator_core.ResourceRef
     tenant: Tenant
 
 
 async def get_resource_tenant(
-    kube_client: kubernetes.client.ApiClient, ref: ResourceRef
+    kube_client: kubernetes.client.ApiClient, ref: operator_core.ResourceRef
 ):
     """
     Async wrapper around a sync method to fetch a `Tenant` resource from kubernetes
@@ -235,7 +193,7 @@ async def get_resource_tenant(
 
 
 async def get_resource_config_map(
-    kube_client: kubernetes.client.ApiClient, ref: ResourceRef
+    kube_client: kubernetes.client.ApiClient, ref: operator_core.ResourceRef
 ) -> dict:
     """
     Async wrapper around a sync method to fetch a `ConfigMap` resource from kubernetes
@@ -250,7 +208,7 @@ async def get_resource_config_map(
 
 
 async def get_resource_secret(
-    kube_client: kubernetes.client.ApiClient, ref: ResourceRef
+    kube_client: kubernetes.client.ApiClient, ref: operator_core.ResourceRef
 ) -> dict:
     """
     Async wrapper around a sync method to fetch a `Secret` resource from kubernetes
@@ -265,7 +223,7 @@ async def get_resource_secret(
 
 
 async def get_resource_service(
-    kube_client: kubernetes.client.ApiClient, ref: ResourceRef
+    kube_client: kubernetes.client.ApiClient, ref: operator_core.ResourceRef
 ) -> dict:
     """
     Async wrapper around a sync method to fetch a `Service` resource from kubernetes
@@ -280,7 +238,7 @@ async def get_resource_service(
 
 
 async def get_tenant(
-    kube_client: kubernetes.client.ApiClient, ref: ResourceRef
+    kube_client: kubernetes.client.ApiClient, ref: operator_core.ResourceRef
 ) -> Tenant:
     """
     Builds a `Tenant` object from information fetched from
@@ -296,12 +254,14 @@ async def get_tenant(
     # NOTE: this will need to eventually support other certificate sources (e.g., cert-manager)
     ca_bundle = None
     if secure:
-        ca_bundle_ref = ResourceRef(name="kube-root-ca.crt", namespace=ref.namespace)
+        ca_bundle_ref = operator_core.ResourceRef(
+            name="kube-root-ca.crt", namespace=ref.namespace
+        )
         ca_bundle_config_map = await get_resource_config_map(kube_client, ca_bundle_ref)
         ca_bundle = ca_bundle_config_map["data"]["ca.crt"]
 
     # extract credentials from tenant secret
-    configuration_ref = ResourceRef(
+    configuration_ref = operator_core.ResourceRef(
         name=tenant["spec"]["configuration"]["name"], namespace=ref.namespace
     )
     configuration_secret = await get_resource_secret(kube_client, configuration_ref)
@@ -319,7 +279,7 @@ async def get_tenant(
 
     # determine endpoint
     # (NOTE: assumes service name 'minio' from helm templates)
-    service_ref = ResourceRef(name="minio", namespace=ref.namespace)
+    service_ref = operator_core.ResourceRef(name="minio", namespace=ref.namespace)
     service = await get_resource_service(kube_client, service_ref)
     service_port: int | None = None
     service_port_name = "http-minio"
@@ -393,7 +353,7 @@ async def resolve_minio_bucket_spec(
     """
     namespace = operator_core.resource_namespace(body)
     name: str = body["metadata"]["name"]
-    resource = ResourceRef(name=name, namespace=namespace)
+    resource = operator_core.ResourceRef(name=name, namespace=namespace)
     tenant_ref = bucket_spec.tenant_ref.resource_ref(namespace)
     tenant = await get_tenant(kube_client, tenant_ref)
     return Bucket(name=bucket_spec.name, resource=resource, tenant=tenant)
@@ -455,7 +415,7 @@ async def resolve_minio_user_spec(
     """
     namespace = operator_core.resource_namespace(body)
     name: str = body["metadata"]["name"]
-    resource = ResourceRef(name=name, namespace=namespace)
+    resource = operator_core.ResourceRef(name=name, namespace=namespace)
     secret_ref = user_spec.secret_key_ref.resource_ref(namespace)
     secret = await get_resource_secret(kube_client, secret_ref)
     secret_key = secret["data"][user_spec.secret_key_ref.key]
@@ -530,7 +490,7 @@ async def resolve_minio_group_spec(
     """
     namespace = operator_core.resource_namespace(body)
     name: str = body["metadata"]["name"]
-    resource = ResourceRef(name=name, namespace=namespace)
+    resource = operator_core.ResourceRef(name=name, namespace=namespace)
     tenant_ref = group_spec.tenant_ref.resource_ref(namespace)
     tenant = await get_tenant(kube_client, tenant_ref)
     return Group(
@@ -600,7 +560,7 @@ async def resolve_minio_group_binding_spec(
     """
     namespace = operator_core.resource_namespace(body)
     name: str = body["metadata"]["name"]
-    resource = ResourceRef(name=name, namespace=namespace)
+    resource = operator_core.ResourceRef(name=name, namespace=namespace)
     tenant_ref = group_binding_spec.tenant_ref.resource_ref(namespace)
     tenant = await get_tenant(kube_client, tenant_ref)
     return GroupBinding(
@@ -664,7 +624,7 @@ async def resolve_minio_policy_spec(
     """
     namespace = operator_core.resource_namespace(body)
     name: str = body["metadata"]["name"]
-    resource = ResourceRef(name=name, namespace=namespace)
+    resource = operator_core.ResourceRef(name=name, namespace=namespace)
     tenant_ref = policy_spec.tenant_ref.resource_ref(namespace)
     tenant = await get_tenant(kube_client, tenant_ref)
     return Policy(
@@ -747,7 +707,7 @@ async def resolve_minio_policy_binding_spec(
     """
     namespace = operator_core.resource_namespace(body)
     name: str = body["metadata"]["name"]
-    resource = ResourceRef(name=name, namespace=namespace)
+    resource = operator_core.ResourceRef(name=name, namespace=namespace)
     tenant_ref = policy_binding_spec.tenant_ref.resource_ref(namespace)
     tenant = await get_tenant(kube_client, tenant_ref)
     return PolicyBinding(
