@@ -13,7 +13,7 @@ __pycache__
 /*.py
 
 # DO NOT ingnore necessary root-level python files
-/setup.py
+!/setup.py
 
 # DO NOT ignore template files
 !*template*
