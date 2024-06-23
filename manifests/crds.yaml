@@ -339,6 +339,10 @@ spec:
           type: string
           description: User
           jsonPath: .status.currentSpec.user
+        - name: Group
+          type: string
+          description: Group
+          jsonPath: .status.currentSpec.group
   scope: Namespaced
   names:
     plural: miniopolicybindings
