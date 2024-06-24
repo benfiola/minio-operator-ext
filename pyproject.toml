@@ -4,7 +4,7 @@ version = "0.0.0"
 dependencies = [
     "click",
     "minio",
-    "bfiola-operator-core==0.1.2",
+    "bfiola-operator-core==0.2.0",
     "python-dotenv",
 ]
 
