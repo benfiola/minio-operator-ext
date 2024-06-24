@@ -15,6 +15,38 @@ import pydantic
 logger = logging.getLogger(__name__)
 
 
+class KnownClusterResourceRefSpec(operator_core.BaseModel):
+    """
+    A 'known' cluster resource ref spec is a resource ref whose api version and plural are contextually known.
+
+    (e.g., one can infer that 'namespaceRef' has plural 'namespaces' and apiVersion 'v1')
+    """
+
+    name: str
+
+
+class KnownResourceRefSpec(operator_core.BaseModel):
+    """
+    A 'known' resource ref spec is a resource ref whose api version and plural are contextually known.
+
+    Additionally, the namespace can be omitted - as one can infer the namespace from the parent resource.
+
+    (e.g., one can infer that 'secretRef' has plural 'secrets' and apiVersion 'v1')
+    """
+
+    name: str
+    namespace: str | None = None
+
+
+class KnownResourceKeyRefSpec(operator_core.KnownResourceRefSpec):
+    """
+    A 'known' resource key ref spec carries all the assumptions of a 'KnownResourceRefSpec' but is intended to
+    additionally require a 'key' field to reference an individual member of a parent resource (e.g., config maps + secrets)
+    """
+
+    key: str
+
+
 class Tenant(operator_core.BaseModel):
     """
     Represents a simplified data container pointing to a minio.min.io/Tenant resource.
@@ -34,7 +66,7 @@ class BucketSpec(operator_core.BaseModel):
     """
 
     name: str
-    tenant_ref: operator_core.KnownResourceRefSpec = pydantic.Field(alias="tenantRef")
+    tenant_ref: KnownResourceRefSpec = pydantic.Field(alias="tenantRef")
 
 
 class Bucket(operator_core.BaseModel):
@@ -49,10 +81,10 @@ class UserSpec(operator_core.BaseModel):
     """
 
     access_key: str = pydantic.Field(alias="accessKey")
-    secret_key_ref: operator_core.KnownResourceKeyRefSpec = pydantic.Field(
+    secret_key_ref: KnownResourceKeyRefSpec = pydantic.Field(
         alias="secretKeyRef"
     )
-    tenant_ref: operator_core.KnownResourceRefSpec = pydantic.Field(alias="tenantRef")
+    tenant_ref: KnownResourceRefSpec = pydantic.Field(alias="tenantRef")
 
 
 class User(operator_core.BaseModel):
@@ -72,7 +104,7 @@ class GroupSpec(operator_core.BaseModel):
     """
 
     name: str
-    tenant_ref: operator_core.KnownResourceRefSpec = pydantic.Field(alias="tenantRef")
+    tenant_ref: KnownResourceRefSpec = pydantic.Field(alias="tenantRef")
 
 
 class Group(operator_core.BaseModel):
@@ -91,7 +123,7 @@ class GroupBindingSpec(operator_core.BaseModel):
     """
 
     group: str
-    tenant_ref: operator_core.KnownResourceRefSpec = pydantic.Field(alias="tenantRef")
+    tenant_ref: KnownResourceRefSpec = pydantic.Field(alias="tenantRef")
     user: str
 
 
@@ -123,7 +155,7 @@ class PolicySpec(operator_core.BaseModel):
 
     statement: list[PolicyStatement]
     name: str
-    tenant_ref: operator_core.KnownResourceRefSpec = pydantic.Field(alias="tenantRef")
+    tenant_ref: KnownResourceRefSpec = pydantic.Field(alias="tenantRef")
     version: str
 
 
@@ -147,7 +179,7 @@ class PolicyBindingSpec(operator_core.BaseModel):
     group: str | None = None
     user: str | None = None
     policy: str
-    tenant_ref: operator_core.KnownResourceRefSpec = pydantic.Field(alias="tenantRef")
+    tenant_ref: KnownResourceRefSpec = pydantic.Field(alias="tenantRef")
 
     @pydantic.model_validator(mode="before")
     @classmethod
