@@ -1,0 +1,49 @@
+name: publish
+on:
+  push:
+    branches:
+      - main
+      - dev
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+    environment:
+      name: docker
+      url: https://hub.docker.com/repository/docker/benfiola/minio-operator-ext/general
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: install python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: set up docker builder
+        run: docker buildx create --platform linux/arm64,linux/amd64 --use
+      - name: install dependencies
+        run: pip install --no-color --progress-bar=off --editable ".[dev]"
+      - name: set data
+        id: data
+        run: |
+          echo "version=$(./scripts/helpers.py print-next-version)" >> "${GITHUB_OUTPUT}"
+          echo "tag=$(./scripts/helpers.py print-next-version --as-tag)" >> "${GITHUB_OUTPUT}"
+      - name: set project version
+        run: ./scripts/helpers.py set-version "${{steps.data.outputs.version}}"
+      - name: build
+        run: ./scripts/helpers.py build
+      - name: publish
+        run: ./scripts/helpers.py publish --token "${{secrets.DOCKER_TOKEN}}"
+      - name: tag
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'refs/tags/${{steps.data.outputs.tag}}',
+              sha: context.sha
+            })

@@ -9,10 +9,23 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = []
+dev = [
+    "packaging",
+    "python-semantic-release",
+    "toml"
+]
 
 [project.scripts]
 minio-operator-ext = "minio_operator_ext.cli:main"
+
+[tool.semantic_release.branches.dev]
+match = "dev"
+prerelease = true
+prerelease_token = "rc"
+
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false
 
 [tool.setuptools.packages.find]
 include = ["minio_operator_ext"]
