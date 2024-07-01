@@ -10,9 +10,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "packaging",
-    "python-semantic-release",
-    "toml"
+    "bfiola-devtools"
 ]
 
 [project.scripts]

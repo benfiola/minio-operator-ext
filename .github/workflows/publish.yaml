@@ -29,14 +29,14 @@ jobs:
       - name: set data
         id: data
         run: |
-          echo "version=$(./scripts/helpers.py print-next-version)" >> "${GITHUB_OUTPUT}"
-          echo "tag=$(./scripts/helpers.py print-next-version --as-tag)" >> "${GITHUB_OUTPUT}"
+          echo "version=$(devtools print-next-version)" >> "${GITHUB_OUTPUT}"
+          echo "tag=$(devtools print-next-version --as-tag)" >> "${GITHUB_OUTPUT}"
       - name: set project version
-        run: ./scripts/helpers.py set-version "${{steps.data.outputs.version}}"
+        run: devtools set-version "${{steps.data.outputs.version}}"
       - name: build
-        run: ./scripts/helpers.py build
+        run: devtools build docker
       - name: publish
-        run: ./scripts/helpers.py publish --token "${{secrets.DOCKER_TOKEN}}"
+        run: devtools publish docker --token "${{secrets.DOCKER_TOKEN}}"
       - name: tag
         uses: actions/github-script@v7
         with:
