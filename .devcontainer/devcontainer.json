@@ -20,7 +20,7 @@
           "source.formatDocument"
         ],
         "editor.defaultFormatter": "esbenp.prettier-vscode",
-        "isort.args": ["--profile", "black", "--project", "minio_operator_ext"],
+        "isort.args": ["--profile", "black", "--pro.ject", "minio_operator_ext"],
         "launch": {
           "version": "0.2.0",
           "configurations": [

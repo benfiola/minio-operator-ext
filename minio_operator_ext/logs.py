@@ -22,9 +22,7 @@ def configure_logging(log_level: LogLevel | None = None):
 
     logger = logging.getLogger(minio_operator_ext.__name__)
     handler = logging.StreamHandler()
-    default_formatter = logging.Formatter(
-        "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
-    )
+    default_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
     handler.setFormatter(default_formatter)
     logger.addHandler(handler)
     logger.setLevel(log_level_map[log_level])

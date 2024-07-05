@@ -1,196 +1,88 @@
+import asyncio
+import base64
 import contextlib
 import io
 import logging
 import pathlib
 import tempfile
-from typing import Any, AsyncGenerator, cast
+from typing import Any, AsyncGenerator, Callable, TypeVar, cast
 
 import dotenv
-import kopf
+import lightkube.resources.core_v1
 import minio
 import minio.credentials.providers
+import minio_operator_ext.resources as resources
 import operator_core
 import pydantic
 
 logger = logging.getLogger(__name__)
 
 
-class KnownClusterResourceRefSpec(operator_core.BaseModel):
-    """
-    A 'known' cluster resource ref spec is a resource ref whose api version and plural are contextually known.
-
-    (e.g., one can infer that 'namespaceRef' has plural 'namespaces' and apiVersion 'v1')
-    """
-
-    name: str
+UnwrapV = TypeVar("UnwrapV")
 
 
-class KnownResourceRefSpec(operator_core.BaseModel):
-    """
-    A 'known' resource ref spec is a resource ref whose api version and plural are contextually known.
-
-    Additionally, the namespace can be omitted - as one can infer the namespace from the parent resource.
-
-    (e.g., one can infer that 'secretRef' has plural 'secrets' and apiVersion 'v1')
-    """
-
-    name: str
-    namespace: str | None = None
-
-
-class KnownResourceKeyRefSpec(operator_core.KnownResourceRefSpec):
-    """
-    A 'known' resource key ref spec carries all the assumptions of a 'KnownResourceRefSpec' but is intended to
-    additionally require a 'key' field to reference an individual member of a parent resource (e.g., config maps + secrets)
-    """
-
-    key: str
-
-
-class Tenant(operator_core.BaseModel):
+class Tenant(pydantic.BaseModel):
     """
     Represents a simplified data container pointing to a minio.min.io/Tenant resource.
     """
 
     access_key: str
-    ca_bundle: str | None = None
     endpoint: str
-    resource: operator_core.ResourceRef
     secret_key: str
     secure: bool
+    ca_bundle: str | None = None
 
 
-class BucketSpec(operator_core.BaseModel):
+class Bucket(pydantic.BaseModel):
     """
-    Represents the spec field of a bfiola.dev/MinioBucket resource.
+    Represents a user with all references resolved
     """
 
     name: str
-    tenant_ref: KnownResourceRefSpec = pydantic.Field(alias="tenantRef")
-
-
-class Bucket(operator_core.BaseModel):
-    name: str
-    resource: operator_core.ResourceRef
     tenant: Tenant
 
 
-class UserSpec(operator_core.BaseModel):
-    """
-    Represents the spec field of a bfiola.dev/MinioUser resource.
-    """
-
-    access_key: str = pydantic.Field(alias="accessKey")
-    secret_key_ref: KnownResourceKeyRefSpec = pydantic.Field(
-        alias="secretKeyRef"
-    )
-    tenant_ref: KnownResourceRefSpec = pydantic.Field(alias="tenantRef")
-
-
-class User(operator_core.BaseModel):
+class User(pydantic.BaseModel):
     """
     Represents a user with all references resolved
     """
 
     access_key: str
     secret_key: str
-    resource: operator_core.ResourceRef
     tenant: Tenant
 
 
-class GroupSpec(operator_core.BaseModel):
-    """
-    Represents the spec field of a bfiola.dev/MinioGroup resource.
-    """
-
-    name: str
-    tenant_ref: KnownResourceRefSpec = pydantic.Field(alias="tenantRef")
-
-
-class Group(operator_core.BaseModel):
+class Group(pydantic.BaseModel):
     """
     Represents a group with all references resolved
     """
 
     name: str
-    resource: operator_core.ResourceRef
     tenant: Tenant
 
 
-class GroupBindingSpec(operator_core.BaseModel):
-    """
-    Represents the spec field of a bfiola.dev/MinioGroupBinding resource.
-    """
-
-    group: str
-    tenant_ref: KnownResourceRefSpec = pydantic.Field(alias="tenantRef")
-    user: str
-
-
-class GroupBinding(operator_core.BaseModel):
+class GroupBinding(pydantic.BaseModel):
     """
     Represents a group binding with all references resolved
     """
 
     group: str
-    resource: operator_core.ResourceRef
     tenant: Tenant
     user: str
 
 
-class PolicyStatement(operator_core.BaseModel):
-    """
-    Represents the spec.statement subfield of a bfiola.dev/MinioPolicy resource.
-    """
-
-    action: list[str]
-    effect: str
-    resource: list[str]
-
-
-class PolicySpec(operator_core.BaseModel):
-    """
-    Represents the spec field of a bfiola.dev/MinioPolicy resource.
-    """
-
-    statement: list[PolicyStatement]
-    name: str
-    tenant_ref: KnownResourceRefSpec = pydantic.Field(alias="tenantRef")
-    version: str
-
-
-class Policy(operator_core.BaseModel):
+class Policy(pydantic.BaseModel):
     """
     Represents a policy with all references resolved
     """
 
-    statement: list[PolicyStatement]
+    statement: list[resources.PolicyStatement]
     name: str
-    resource: operator_core.ResourceRef
     tenant: Tenant
     version: str
 
 
-class PolicyBindingSpec(operator_core.BaseModel):
-    """
-    Represents the spec field of a bfiola.dev/MinioPolicyBinding resource.
-    """
-
-    group: str | None = None
-    user: str | None = None
-    policy: str
-    tenant_ref: KnownResourceRefSpec = pydantic.Field(alias="tenantRef")
-
-    @pydantic.model_validator(mode="before")
-    @classmethod
-    def ensure_group_or_user_set(cls, data: Any) -> Any:
-        fields = [data.get("group"), data.get("user")]
-        if all(fields) or not any(fields):
-            raise ValueError(f"only one of [group, user] must be provided")
-        return data
-
-
-class PolicyBinding(operator_core.BaseModel):
+class PolicyBinding(pydantic.BaseModel):
     """
     Represents a policy binding with all references resolved
     """
@@ -198,8 +90,10 @@ class PolicyBinding(operator_core.BaseModel):
     group: str | None
     user: str | None
     policy: str
-    resource: operator_core.ResourceRef
     tenant: Tenant
+
+
+SyncRV = TypeVar("SyncRV")
 
 
 class Operator(operator_core.Operator):
@@ -212,6 +106,42 @@ class Operator(operator_core.Operator):
         kwargs["logger"] = logger
         super().__init__(**kwargs)
 
+        self.watch_resource(
+            resources.MinioBucket,
+            on_create=self.create_minio_bucket,
+            on_delete=self.delete_minio_bucket,
+        )
+        self.watch_resource(
+            resources.MinioGroup,
+            on_create=self.create_minio_group,
+            on_delete=self.delete_minio_group,
+        )
+        self.watch_resource(
+            resources.MinioGroupBinding,
+            on_create=self.create_minio_group_binding,
+            on_delete=self.delete_minio_group_binding,
+        )
+        self.watch_resource(
+            resources.MinioPolicy,
+            on_create=self.create_minio_policy,
+            on_update=self.update_minio_policy,
+            on_delete=self.delete_minio_policy,
+        )
+        self.watch_resource(
+            resources.MinioPolicyBinding,
+            on_create=self.create_minio_policy_binding,
+            on_delete=self.delete_minio_policy_binding,
+        )
+        self.watch_resource(
+            resources.MinioUser,
+            on_create=self.create_minio_user,
+            on_update=self.update_minio_user,
+            on_delete=self.delete_minio_user,
+        )
+
+    async def run_sync(self, callable: Callable[[], SyncRV]) -> SyncRV:
+        return await asyncio.get_running_loop().run_in_executor(None, callable)
+
     @contextlib.asynccontextmanager
     async def temporary_file(self, **kwargs) -> AsyncGenerator[pathlib.Path, None]:
         """
@@ -223,9 +153,7 @@ class Operator(operator_core.Operator):
             yield pathlib.Path(handle.name)
 
     @contextlib.asynccontextmanager
-    async def create_minio_client(
-        self, tenant: Tenant
-    ) -> AsyncGenerator[minio.Minio, None]:
+    async def create_minio_client(self, tenant: Tenant) -> AsyncGenerator[minio.Minio, None]:
         """
         Creates a minio client from the given tenant.
         """
@@ -262,71 +190,61 @@ class Operator(operator_core.Operator):
                 client._http.connection_pool_kw["ca_certs"] = f"{ca_cert}"
             yield client
 
-    async def get_tenant(self, ref: operator_core.ResourceRef) -> Tenant:
+    async def resolve_tenant(self, resource: resources.Tenant) -> Tenant:
         """
         Builds a `Tenant` object from information fetched from
         resources within the kubernetes cluster.
         """
-        # get tenant resource
-        tenant = await self.get_resource(ref)
-        if tenant is None:
-            raise operator_core.OperatorError(
-                f"tenant not found: {ref.fqn}", recoverable=True
-            )
+        namespace = resource.metadata.namespace or "default"
 
         # determine whether tenant uses http or https
-        secure = tenant["spec"]["requestAutoCert"]
+        secure = resource.spec.requestAutoCert
 
         # if the tenant uses https, fetch ca bundle used to verify self-signed cert
         # NOTE: this will need to eventually support other certificate sources (e.g., cert-manager)
         ca_bundle = None
         if secure:
-            ca_bundle_ref = operator_core.ResourceRef(
-                api_version="v1",
-                plural="configmaps",
-                name="kube-root-ca.crt",
-                namespace=ref.namespace,
-            )
-            ca_bundle_config_map = await self.get_resource(ca_bundle_ref)
-            if ca_bundle_config_map is None:
-                raise operator_core.OperatorError(
-                    f"ca bundle config map not found: {ca_bundle_ref.fqn}",
-                    recoverable=True,
+            ca_bundle_config_map = (
+                await self.kube_client.get(
+                    lightkube.resources.core_v1.ConfigMap,
+                    name="kube-root-ca.crt",
+                    namespace=namespace,
                 )
-            ca_bundle = self.get_resource_key(ca_bundle_config_map, "ca.crt")
+            ).to_dict()
+            ca_bundle = ca_bundle_config_map["data"]["ca.crt"]
 
         # extract credentials from tenant secret
-        configuration_ref = operator_core.ResourceRef(
-            api_version="v1",
-            plural="secrets",
-            name=tenant["spec"]["configuration"]["name"],
-            namespace=ref.namespace,
-        )
-        configuration_secret = await self.get_resource(configuration_ref)
-        if configuration_secret is None:
-            raise operator_core.OperatorError(
-                f"tenant configuration secret not found: {configuration_ref.fqn}",
-                recoverable=True,
+        configuration_name = resource.spec.configuration.name
+        configuration = (
+            await self.kube_client.get(
+                lightkube.resources.core_v1.Secret,
+                name=configuration_name,
+                namespace=namespace,
             )
-        env_file = self.get_resource_key(configuration_secret, "config.env")
+        ).to_dict()
+        env_file = configuration["data"]["config.env"]
+        env_file = base64.b64decode(env_file).decode("utf-8")
         env_file = env_file.replace("export ", "")
         env_data = dotenv.dotenv_values(stream=io.StringIO(env_file))
         access_key = env_data["MINIO_ROOT_USER"]
         secret_key = env_data["MINIO_ROOT_PASSWORD"]
         if not access_key or not secret_key:
-            raise operator_core.OperatorError(
-                f"credentials not found in secret: {operator_core.resource_fqn(configuration_secret)}"
-            )
+            raise operator_core.OperatorError(f"credentials not found in secret: {namespace}/{configuration_name}")
 
         # determine endpoint
         # (NOTE: assumes service name 'minio' from helm templates)
-        service_ref = operator_core.ResourceRef(
-            api_version="v1", plural="services", name="minio", namespace=ref.namespace
-        )
-        service = await self.get_resource(service_ref)
+        service_name = "minio"
+        service = (
+            await self.kube_client.get(
+                lightkube.resources.core_v1.Service,
+                name=service_name,
+                namespace=namespace,
+            )
+        ).to_dict()
         if service is None:
             raise operator_core.OperatorError(
-                f"tenant service not found: {service_ref}", recoverable=True
+                f"tenant service not found: {namespace}/{service_name}",
+                recoverable=True,
             )
         service_port: int | None = None
         service_port_name = "http-minio"
@@ -338,49 +256,39 @@ class Operator(operator_core.Operator):
             service_port = port["port"]
             break
         if not service_port:
-            raise operator_core.OperatorError(
-                f"port not found in service: {operator_core.resource_fqn(service)}"
-            )
-        endpoint = f"{service_ref.name}.{service_ref.namespace}.svc:{service_port}"
+            raise operator_core.OperatorError(f"port not found in service: {namespace}/{service_name}")
+
+        svc_namespace = service["metadata"]["namespace"]
+        svc_name = service["metadata"]["name"]
+        endpoint = f"{svc_name}.{svc_namespace}.svc:{service_port}"
 
         return Tenant(
             access_key=access_key,
             ca_bundle=ca_bundle,
             endpoint=endpoint,
-            resource=ref,
             secret_key=secret_key,
             secure=secure,
         )
 
-    async def resolve_minio_bucket_spec(
-        self, bucket_spec: BucketSpec, body: kopf.Body
-    ) -> Bucket:
+    async def resolve_minio_bucket(self, resource: resources.MinioBucket) -> Bucket:
         """
         Resolves a bucket spec to a bucket - translating references to actual values.
         """
-        namespace = operator_core.resource_namespace(body)
-
-        resource = operator_core.ResourceRef(
-            api_version="bfiola.dev/v1",
-            plural="miniobuckets",
-            name=body["metadata"]["name"],
-            namespace=namespace,
+        namespace = resource.metadata.namespace or "default"
+        tenant_resource = await self.kube_client.get(
+            resources.Tenant,
+            name=resource.spec.tenantRef.name,
+            namespace=resource.spec.tenantRef.namespace or namespace,
         )
+        tenant = await self.resolve_tenant(tenant_resource)
+        return Bucket(name=resource.spec.name, tenant=tenant)
 
-        tenant_ref = operator_core.ResourceRef(
-            api_version="minio.min.io/v2",
-            plural="tenants",
-            name=bucket_spec.tenant_ref.name,
-            namespace=bucket_spec.tenant_ref.namespace or namespace,
-        )
-        tenant = await self.get_tenant(tenant_ref)
-
-        return Bucket(name=bucket_spec.name, resource=resource, tenant=tenant)
-
-    async def create_minio_bucket(self, bucket: Bucket):
+    async def create_minio_bucket(self, resource: resources.MinioBucket, **kwargs):
         """
-        Creates a new minio bucket given the provided bucket resource
+        Creates a minio bucket
         """
+        bucket = await self.resolve_minio_bucket(resource)
+
         async with self.create_minio_client(bucket.tenant) as minio_client:
 
             def inner():
@@ -388,28 +296,17 @@ class Operator(operator_core.Operator):
                     minio_client.make_bucket(bucket.name)
                 except minio.error.S3Error as e:
                     if e.code == "BucketAlreadyOwnedByYou":
-                        raise operator_core.OperatorError(
-                            f"bucket already exists: {bucket.tenant.resource.fqn}/{bucket.name}"
-                        )
+                        raise operator_core.OperatorError(f"bucket already exists: {bucket.name}")
                     raise e
 
-            await operator_core.run_sync(inner)
+            await self.run_sync(inner)
 
-    async def update_minio_bucket(self, bucket: Bucket):
+    async def delete_minio_bucket(self, resource: resources.MinioBucket, **kwargs):
         """
-        Updates an existing minio bucket given the provided bucket resource
+        Deletes a minio bucket
         """
-        async with self.create_minio_client(bucket.tenant) as minio_client:
+        bucket = await self.resolve_minio_bucket(resource)
 
-            def inner():
-                pass
-
-            await operator_core.run_sync(inner)
-
-    async def delete_minio_bucket(self, bucket: Bucket):
-        """
-        Deletes an existing minio bucket given the provided bucket resource
-        """
         async with self.create_minio_client(bucket.tenant) as minio_client:
 
             def inner():
@@ -420,136 +317,76 @@ class Operator(operator_core.Operator):
                         return
                     raise e
 
-            await operator_core.run_sync(inner)
+            await self.run_sync(inner)
 
-    @operator_core.hook("create", "bfiola.dev", "v1", "miniobuckets")
-    async def on_bucket_create(self, *, body: kopf.Body, patch: kopf.Patch, **kwargs):
-        """
-        Called when a bfiola.dev/v1/MinioBucket resource is created
-        """
-        spec = BucketSpec.model_validate(body["spec"])
-        bucket = await self.resolve_minio_bucket_spec(spec, body)
-        await self.create_minio_bucket(bucket)
-        patch.status["currentSpec"] = spec.model_dump()
-
-    @operator_core.hook("update", "bfiola.dev", "v1", "miniobuckets")
-    async def on_bucket_update(self, *, body: kopf.Body, patch: kopf.Patch, **kwargs):
-        """
-        Called when a bfiola.dev/v1/MinioBucket resource is updated
-        """
-        kopf_logger: logging.Logger = kwargs["logger"]
-        new_spec = BucketSpec.model_validate(body["spec"])
-        current_spec = body["status"].get("currentSpec")
-
-        # handle updates to resources that previously failed to create
-        if not current_spec:
-            bucket = await self.resolve_minio_bucket_spec(new_spec, body)
-            await self.create_minio_bucket(bucket)
-            patch.status["currentSpec"] = new_spec.model_dump()
-            return
-
-        current_spec = BucketSpec.model_validate(current_spec)
-        immutable = {("tenantRef",), ("name",)}
-        diff = operator_core.get_diff(current_spec, new_spec)
-        diff = operator_core.filter_immutable_diff_items(diff, immutable, kopf_logger)
-        for item in diff:
-            current_spec = operator_core.apply_diff_item(current_spec, item)
-            bucket = await self.resolve_minio_bucket_spec(current_spec, body)
-            await self.update_minio_bucket(bucket)
-            patch.status["currentSpec"] = current_spec.model_dump()
-
-    @operator_core.hook("delete", "bfiola.dev", "v1", "miniobuckets")
-    async def on_bucket_delete(self, body: kopf.Body, **kwargs):
-        """
-        Called when a bfiola.dev/v1/MinioBucket resource is deleted
-        """
-        try:
-            current_spec = body["status"]["currentSpec"]
-            current_spec = BucketSpec.model_validate(current_spec)
-            bucket = await self.resolve_minio_bucket_spec(current_spec, body)
-        except Exception as e:
-            return
-        await self.delete_minio_bucket(bucket)
-
-    async def resolve_minio_user_spec(
-        self, user_spec: UserSpec, body: kopf.Body
-    ) -> User:
+    async def resolve_minio_user(self, resource: resources.MinioUser) -> User:
         """
         Resolves a user spec to a user - translating references to actual values.
         """
-        namespace = operator_core.resource_namespace(body)
-
-        resource = operator_core.ResourceRef(
-            api_version="bfiola.dev/v1",
-            plural="miniousers",
-            name=body["metadata"]["name"],
-            namespace=namespace,
-        )
-
-        secret_ref = operator_core.ResourceRef(
-            api_version="v1",
-            plural="secrets",
-            name=user_spec.secret_key_ref.name,
-            namespace=user_spec.secret_key_ref.namespace or namespace,
-        )
-        secret = await self.get_resource(secret_ref)
-        if secret is None:
-            raise operator_core.OperatorError(
-                f"user secret not found: {secret_ref.fqn}", recoverable=True
+        namespace = resource.metadata.namespace or "default"
+        secret = (
+            await self.kube_client.get(
+                lightkube.resources.core_v1.Secret,
+                name=resource.spec.secretKeyRef.name,
+                namespace=namespace,
             )
-        secret_key = self.get_resource_key(secret, user_spec.secret_key_ref.key)
+        ).to_dict()
+        secret_key = secret["data"][resource.spec.secretKeyRef.key]
+        secret_key = base64.b64decode(secret_key).decode("utf-8")
 
-        tenant_ref = operator_core.ResourceRef(
-            api_version="minio.min.io/v2",
-            plural="tenants",
-            name=user_spec.tenant_ref.name,
-            namespace=user_spec.tenant_ref.namespace or namespace,
+        tenant_resource = await self.kube_client.get(
+            resources.Tenant,
+            name=resource.spec.tenantRef.name,
+            namespace=resource.spec.tenantRef.namespace or namespace,
         )
-        tenant = await self.get_tenant(tenant_ref)
+        tenant = await self.resolve_tenant(tenant_resource)
 
         return User(
-            access_key=user_spec.access_key,
+            access_key=resource.spec.accessKey,
             secret_key=secret_key,
-            resource=resource,
             tenant=tenant,
         )
 
-    async def create_minio_user(self, user: User):
+    async def create_minio_user(self, resource: resources.MinioUser, **kwargs):
         """
-        Creates a new user given the provided user resource
+        Creates a minio user
         """
+        user = await self.resolve_minio_user(resource)
+
         async with self.create_minio_admin_client(user.tenant) as minio_admin_client:
 
             def inner():
                 # NOTE: the `user_add` endpoint will succeed even if a user with the access key already exists
                 try:
                     minio_admin_client.user_info(user.access_key)
-                    raise operator_core.OperatorError(
-                        f"user already exists: {user.access_key}"
-                    )
+                    raise operator_core.OperatorError(f"user already exists: {user.access_key}")
                 except minio.error.MinioAdminException as e:
                     if e._code != "404":
                         raise e
 
                 minio_admin_client.user_add(user.access_key, user.secret_key)
 
-            await operator_core.run_sync(inner)
+            await self.run_sync(inner)
 
-    async def update_minio_user(self, user: User):
+    async def update_minio_user(self, resource: resources.MinioUser, **kwargs):
         """
-        Updates an existing user given the provided user resource
+        Creates a minio user
         """
+        user = await self.resolve_minio_user(resource)
+
         async with self.create_minio_admin_client(user.tenant) as minio_admin_client:
 
             def inner():
                 minio_admin_client.user_add(user.access_key, user.secret_key)
 
-            await operator_core.run_sync(inner)
+            await self.run_sync(inner)
 
-    async def delete_minio_user(self, user: User):
+    async def delete_minio_user(self, resource: resources.MinioUser, **kwargs):
         """
-        Deletes an existing user given the provided user resource
+        Deletes a minio user
         """
+        user = await self.resolve_minio_user(resource)
+
         async with self.create_minio_admin_client(user.tenant) as minio_admin_client:
 
             def inner():
@@ -560,105 +397,39 @@ class Operator(operator_core.Operator):
                         return
                     raise e
 
-            await operator_core.run_sync(inner)
+            await self.run_sync(inner)
 
-    @operator_core.hook("create", "bfiola.dev", "v1", "miniousers")
-    async def on_user_create(self, *, body: kopf.Body, patch: kopf.Patch, **kwargs):
-        """
-        Called when a bfiola.dev/v1/MinioUser resource is created
-        """
-        spec = UserSpec.model_validate(body["spec"])
-        # define secret key ref namespace if omitted
-        if spec.secret_key_ref.namespace is None:
-            spec.secret_key_ref.namespace = operator_core.resource_namespace(body)
-        user = await self.resolve_minio_user_spec(spec, body)
-        await self.create_minio_user(user)
-        patch.status["currentSpec"] = spec.model_dump(by_alias=True)
-
-    @operator_core.hook("update", "bfiola.dev", "v1", "miniousers")
-    async def on_user_update(self, *, body: kopf.Body, patch: kopf.Patch, **kwargs):
-        """
-        Called when a bfiola.dev/v1/MinioUser resource is updated
-        """
-        kopf_logger: logging.Logger = kwargs["logger"]
-        new_spec = UserSpec.model_validate(body["spec"])
-        # define secret key ref namespace if omitted
-        if new_spec.secret_key_ref.namespace is None:
-            new_spec.secret_key_ref.namespace = operator_core.resource_namespace(body)
-        current_spec = body["status"].get("currentSpec")
-
-        # handle updates to resources that previously failed to create
-        if not current_spec:
-            user = await self.resolve_minio_user_spec(new_spec, body)
-            await self.create_minio_user(user)
-            patch.status["currentSpec"] = new_spec.model_dump()
-            return
-
-        current_spec = UserSpec.model_validate(current_spec)
-        immutable = {("tenantRef",), ("accessKey",)}
-        diff = operator_core.get_diff(current_spec, new_spec)
-        diff = operator_core.filter_immutable_diff_items(diff, immutable, kopf_logger)
-        for item in diff:
-            current_spec = operator_core.apply_diff_item(current_spec, item)
-            user = await self.resolve_minio_user_spec(current_spec, body)
-            await self.update_minio_user(user)
-            patch.status["currentSpec"] = current_spec.model_dump()
-
-    @operator_core.hook("delete", "bfiola.dev", "v1", "miniousers")
-    async def on_user_delete(self, body: kopf.Body, **kwargs):
-        """
-        Called when a bfiola.dev/v1/MinioUser resource is deleted
-        """
-        try:
-            current_spec = body["status"]["currentSpec"]
-            current_spec = UserSpec.model_validate(current_spec)
-            user = await self.resolve_minio_user_spec(current_spec, body)
-        except Exception as e:
-            return
-        await self.delete_minio_user(user)
-
-    async def resolve_minio_group_spec(
-        self, group_spec: GroupSpec, body: kopf.Body
-    ) -> Group:
+    async def resolve_minio_group(self, resource: resources.MinioGroup) -> Group:
         """
         Resolves a group spec to a group - translating references to actual values.
         """
-        namespace = operator_core.resource_namespace(body)
+        namespace = resource.metadata.namespace or "default"
 
-        resource = operator_core.ResourceRef(
-            api_version="bfiola.dev/v1",
-            plural="miniogroups",
-            name=body["metadata"]["name"],
-            namespace=namespace,
+        tenant_resource = await self.kube_client.get(
+            resources.Tenant,
+            name=resource.spec.tenantRef.name,
+            namespace=resource.spec.tenantRef.namespace or namespace,
         )
-
-        tenant_ref = operator_core.ResourceRef(
-            api_version="minio.min.io/v2",
-            plural="tenants",
-            name=group_spec.tenant_ref.name,
-            namespace=group_spec.tenant_ref.namespace or namespace,
-        )
-        tenant = await self.get_tenant(tenant_ref)
+        tenant = await self.resolve_tenant(tenant_resource)
 
         return Group(
-            name=group_spec.name,
-            resource=resource,
+            name=resource.spec.name,
             tenant=tenant,
         )
 
-    async def create_minio_group(self, group: Group):
+    async def create_minio_group(self, resource: resources.MinioGroup, **kwargs):
         """
-        Creates a new group given the provided group resource
+        Creates a minio group
         """
+        group = await self.resolve_minio_group(resource)
+
         async with self.create_minio_admin_client(group.tenant) as minio_admin_client:
 
             def inner():
                 # NOTE: the `group_add` endpoint will succeed even when a group already exists
                 try:
                     minio_admin_client.group_info(group.name)
-                    raise operator_core.OperatorError(
-                        f"group already exists: {group.name}"
-                    )
+                    raise operator_core.OperatorError(f"group already exists: {group.name}")
                 except minio.error.MinioAdminException as e:
                     if e._code != "404":
                         raise e
@@ -666,23 +437,14 @@ class Operator(operator_core.Operator):
                 # NOTE: this api is incorrectly typed (the member list is typed as 'str' - should be 'list[str]')
                 minio_admin_client.group_add(group.name, cast(str, []))
 
-            await operator_core.run_sync(inner)
+            await self.run_sync(inner)
 
-    async def update_minio_group(self, group: Group):
+    async def delete_minio_group(self, resource: resources.MinioGroup, **kwargs):
         """
-        Updates an existing group given the provided group resource
+        Deletes a minio group
         """
-        async with self.create_minio_admin_client(group.tenant) as minio_admin_client:
+        group = await self.resolve_minio_group(resource)
 
-            def inner():
-                pass
-
-            await operator_core.run_sync(inner)
-
-    async def delete_minio_group(self, group: Group):
-        """
-        Deletes an existing group given the provided group resource
-        """
         async with self.create_minio_admin_client(group.tenant) as minio_admin_client:
 
             def inner():
@@ -693,96 +455,34 @@ class Operator(operator_core.Operator):
                         return
                     raise e
 
-            await operator_core.run_sync(inner)
+            await self.run_sync(inner)
 
-    @operator_core.hook("create", "bfiola.dev", "v1", "miniogroups")
-    async def on_group_create(self, *, body: kopf.Body, patch: kopf.Patch, **kwargs):
-        """
-        Called when a bfiola.dev/v1/MinioGroup resource is created
-        """
-        spec = GroupSpec.model_validate(body["spec"])
-        group = await self.resolve_minio_group_spec(spec, body)
-        await self.create_minio_group(group)
-        patch.status["currentSpec"] = spec.model_dump(by_alias=True)
-
-    @operator_core.hook("update", "bfiola.dev", "v1", "miniogroups")
-    async def on_group_update(self, *, body: kopf.Body, patch: kopf.Patch, **kwargs):
-        """
-        Called when a bfiola.dev/v1/MinioGroup resource is updated
-        """
-        kopf_logger: logging.Logger = kwargs["logger"]
-        new_spec = GroupSpec.model_validate(body["spec"])
-        current_spec = body["status"].get("currentSpec")
-
-        # handle updates to resources that previously failed to create
-        if not current_spec:
-            group = await self.resolve_minio_group_spec(new_spec, body)
-            await self.create_minio_group(group)
-            patch.status["currentSpec"] = new_spec.model_dump()
-            return
-
-        current_spec = GroupSpec.model_validate(current_spec)
-        immutable = {("tenantRef",), ("name",)}
-        diff = operator_core.get_diff(current_spec, new_spec)
-        diff = operator_core.filter_immutable_diff_items(diff, immutable, kopf_logger)
-        for item in diff:
-            current_spec = operator_core.apply_diff_item(current_spec, item)
-            group = await self.resolve_minio_group_spec(current_spec, body)
-            await self.update_minio_group(group)
-            patch.status["currentSpec"] = current_spec.model_dump()
-
-    @operator_core.hook("delete", "bfiola.dev", "v1", "miniogroups")
-    async def on_group_delete(self, body: kopf.Body, **kwargs):
-        """
-        Called when a bfiola.dev/v1/MinioGroup resource is deleted
-        """
-        try:
-            current_spec = body["status"]["currentSpec"]
-            current_spec = GroupSpec.model_validate(current_spec)
-            group = await self.resolve_minio_group_spec(current_spec, body)
-        except Exception as e:
-            return
-        await self.delete_minio_group(group)
-
-    async def resolve_minio_group_binding_spec(
-        self,
-        group_binding_spec: GroupBindingSpec,
-        body: kopf.Body,
-    ) -> GroupBinding:
+    async def resolve_minio_group_binding(self, resource: resources.MinioGroupBinding) -> GroupBinding:
         """
         Resolves a group binding spec to a group binding - translating references to actual values.
         """
-        namespace = operator_core.resource_namespace(body)
+        namespace = resource.metadata.namespace or "default"
 
-        resource = operator_core.ResourceRef(
-            api_version="bfiola.dev/v1",
-            plural="miniogroupbindings",
-            name=body["metadata"]["name"],
-            namespace=namespace,
+        tenant_resource = await self.kube_client.get(
+            resources.Tenant,
+            name=resource.spec.tenantRef.name,
+            namespace=resource.spec.tenantRef.namespace or namespace,
         )
-
-        tenant_ref = operator_core.ResourceRef(
-            api_version="minio.min.io/v2",
-            plural="tenants",
-            name=group_binding_spec.tenant_ref.name,
-            namespace=group_binding_spec.tenant_ref.namespace or namespace,
-        )
-        tenant = await self.get_tenant(tenant_ref)
+        tenant = await self.resolve_tenant(tenant_resource)
 
         return GroupBinding(
-            group=group_binding_spec.group,
-            resource=resource,
+            group=resource.spec.group,
             tenant=tenant,
-            user=group_binding_spec.user,
+            user=resource.spec.user,
         )
 
-    async def create_minio_group_binding(self, group_binding: GroupBinding):
+    async def create_minio_group_binding(self, resource: resources.MinioGroupBinding, **kwargs):
         """
-        Creates a new group binding given the provided group binding resource
+        Adds a user to a group
         """
-        async with self.create_minio_admin_client(
-            group_binding.tenant
-        ) as minio_admin_client:
+        group_binding = await self.resolve_minio_group_binding(resource)
+
+        async with self.create_minio_admin_client(group_binding.tenant) as minio_admin_client:
 
             def inner():
                 # NOTE: ensure group already exists before calling 'group_add' to modify members
@@ -791,131 +491,50 @@ class Operator(operator_core.Operator):
                 except minio.error.MinioAdminException as e:
                     if e._code != "404":
                         raise e
-                    raise operator_core.OperatorError(
-                        f"group does not exist: {group_binding.group}", recoverable=True
-                    )
+                    raise operator_core.OperatorError(f"group does not exist: {group_binding.group}", recoverable=True)
 
                 # NOTE: this api is incorrectly typed (the member list is typed as 'str' - should be 'list[str]')
-                minio_admin_client.group_add(
-                    group_binding.group, cast(str, [group_binding.user])
-                )
+                minio_admin_client.group_add(group_binding.group, cast(str, [group_binding.user]))
 
-            await operator_core.run_sync(inner)
+            await self.run_sync(inner)
 
-    async def delete_minio_group_binding(self, group_binding: GroupBinding):
+    async def delete_minio_group_binding(self, resource: resources.MinioGroupBinding, **kwargs):
         """
-        Deletes an existing group binding given the provided group binding resource
+        Removes a user from a group
         """
-        async with self.create_minio_admin_client(
-            group_binding.tenant
-        ) as minio_admin_client:
+        group_binding = await self.resolve_minio_group_binding(resource)
+
+        async with self.create_minio_admin_client(group_binding.tenant) as minio_admin_client:
 
             def inner():
                 try:
                     # NOTE: this api is incorrectly typed (the member list is typed as 'str' - should be 'list[str]')
-                    minio_admin_client.group_remove(
-                        group_binding.group, cast(str, [group_binding.user])
-                    )
+                    minio_admin_client.group_remove(group_binding.group, cast(str, [group_binding.user]))
                 except minio.error.MinioAdminException as e:
                     if e._code == "404":
                         return
                     raise e
 
-            await operator_core.run_sync(inner)
+            await self.run_sync(inner)
 
-    @operator_core.hook("create", "bfiola.dev", "v1", "miniogroupbindings")
-    async def on_group_binding_create(
-        self, body: kopf.Body, patch: kopf.Patch, **kwargs
-    ):
-        """
-        Called when a bfiola.dev/v1/MinioGroupBinding resource is created
-        """
-        spec = GroupBindingSpec.model_validate(body["spec"])
-        group_binding = await self.resolve_minio_group_binding_spec(spec, body)
-        await self.create_minio_group_binding(group_binding)
-        patch.status["currentSpec"] = spec.model_dump(by_alias=True)
-
-    @operator_core.hook("update", "bfiola.dev", "v1", "miniogroupbindings")
-    async def on_group_binding_update(
-        self, *, body: kopf.Body, patch: kopf.Patch, **kwargs
-    ):
-        """
-        Called when a bfiola.dev/v1/MinioGroupBinding resource is updated
-        """
-        kopf_logger: logging.Logger = kwargs["logger"]
-        new_spec = GroupBindingSpec.model_validate(body["spec"])
-        current_spec = body["status"].get("currentSpec")
-
-        # handle updates to resources that previously failed to create
-        if not current_spec:
-            group_binding = await self.resolve_minio_group_binding_spec(new_spec, body)
-            await self.create_minio_group_binding(group_binding)
-            patch.status["currentSpec"] = new_spec.model_dump(by_alias=True)
-            return
-
-        current_spec = GroupBindingSpec.model_validate(current_spec)
-        immutable: set[tuple[str, ...]] = {("tenantRef",)}
-        diff = operator_core.get_diff(current_spec, new_spec)
-        diff = operator_core.filter_immutable_diff_items(diff, immutable, kopf_logger)
-        for item in diff:
-            group_binding = await self.resolve_minio_group_binding_spec(
-                current_spec, body
-            )
-            await self.delete_minio_group_binding(group_binding)
-            patch.status["currentSpec"] = None
-            current_spec = operator_core.apply_diff_item(current_spec, item)
-            group_binding = await self.resolve_minio_group_binding_spec(
-                current_spec, body
-            )
-            await self.create_minio_group_binding(group_binding)
-            patch.status["currentSpec"] = current_spec.model_dump(by_alias=True)
-
-    @operator_core.hook("delete", "bfiola.dev", "v1", "miniogroupbindings")
-    async def on_group_binding_delete(
-        self, body: kopf.Body, patch: kopf.Patch, **kwargs
-    ):
-        """
-        Called when a bfiola.dev/v1/MinioGroupBinding resource is deleted
-        """
-        try:
-            current_spec = body["status"]["currentSpec"]
-            current_spec = GroupBindingSpec.model_validate(current_spec)
-            group_binding = await self.resolve_minio_group_binding_spec(
-                current_spec, body
-            )
-        except Exception as e:
-            return
-        await self.delete_minio_group_binding(group_binding)
-
-    async def resolve_minio_policy_spec(
-        self, policy_spec: PolicySpec, body: kopf.Body
-    ) -> Policy:
+    async def resolve_minio_policy(self, resource: resources.MinioPolicy) -> Policy:
         """
         Resolves a policy spec to a policy - translating references to actual values.
         """
-        namespace = operator_core.resource_namespace(body)
+        namespace = resource.metadata.namespace or "default"
 
-        resource = operator_core.ResourceRef(
-            api_version="bfiola.dev/v1",
-            plural="miniopolicies",
-            name=body["metadata"]["name"],
-            namespace=namespace,
+        tenant_resource = await self.kube_client.get(
+            resources.Tenant,
+            name=resource.spec.tenantRef.name,
+            namespace=resource.spec.tenantRef.namespace or namespace,
         )
-
-        tenant_ref = operator_core.ResourceRef(
-            api_version="minio.min.io/v2",
-            plural="tenants",
-            name=policy_spec.tenant_ref.name,
-            namespace=policy_spec.tenant_ref.namespace or namespace,
-        )
-        tenant = await self.get_tenant(tenant_ref)
+        tenant = await self.resolve_tenant(tenant_resource)
 
         return Policy(
-            name=policy_spec.name,
-            resource=resource,
-            statement=policy_spec.statement,
+            name=resource.spec.name,
+            statement=resource.spec.statement,
             tenant=tenant,
-            version=policy_spec.version,
+            version=resource.spec.version,
         )
 
     @contextlib.asynccontextmanager
@@ -927,14 +546,16 @@ class Operator(operator_core.Operator):
         Provides a context that writes a given policy to a policy file suitable for use with the minio admin apis.
         """
         async with self.temporary_file(suffix=".json") as policy_file:
-            policy_data = policy.model_dump_json(include={"version", "statement"})
-            policy_file.write_text(policy_data)
+            data = policy.model_dump_json(include={"statement", "version"})
+            policy_file.write_text(data)
             yield policy_file
 
-    async def create_minio_policy(self, policy: Policy):
+    async def create_minio_policy(self, resource: resources.MinioPolicy, **kwargs):
         """
-        Creates a new policy given the provided policy
+        Creates a minio policy
         """
+        policy = await self.resolve_minio_policy(resource)
+
         async with self.create_minio_admin_client(policy.tenant) as minio_admin_client:
             async with self.minio_policy_file(policy) as policy_file:
 
@@ -942,152 +563,85 @@ class Operator(operator_core.Operator):
                     # NOTE: the `policy_add` endpoint will succeed even if a policy with the given name already exists
                     try:
                         minio_admin_client.policy_info(policy.name)
-                        raise operator_core.OperatorError(
-                            f"policy already exists: {policy.name}"
-                        )
+                        raise operator_core.OperatorError(f"policy already exists: {policy.name}")
                     except minio.error.MinioAdminException as e:
                         if e._code != "404":
                             raise e
 
                     minio_admin_client.policy_add(policy.name, f"{policy_file}")
 
-                return await operator_core.run_sync(inner)
+                return await self.run_sync(inner)
 
-    async def update_minio_policy(self, policy: Policy):
+    async def update_minio_policy(self, resource: resources.MinioPolicy, **kwargs):
         """
-        Updates an existing policy given the provided policy
+        Updates a minio policy
         """
+        policy = await self.resolve_minio_policy(resource)
+
         async with self.create_minio_admin_client(policy.tenant) as minio_admin_client:
             async with self.minio_policy_file(policy) as policy_file:
 
                 def inner():
                     minio_admin_client.policy_add(policy.name, f"{policy_file}")
 
-                await operator_core.run_sync(inner)
+                await self.run_sync(inner)
 
-    async def delete_minio_policy(self, policy: Policy):
+    async def delete_minio_policy(self, resource: resources.MinioPolicy, **kwargs):
         """
-        Deletes an existing policy given the provided policy
+        Deletes a minio policy
         """
+        policy = await self.resolve_minio_policy(resource)
         async with self.create_minio_admin_client(policy.tenant) as minio_admin_client:
 
             def inner():
                 minio_admin_client.policy_remove(policy.name)
 
-            await operator_core.run_sync(inner)
+            await self.run_sync(inner)
 
-    @operator_core.hook("create", "bfiola.dev", "v1", "miniopolicies")
-    async def on_policy_create(self, body: kopf.Body, patch: kopf.Patch, **kwargs):
-        """
-        Called when a bfiola.dev/v1/MinioPolicy resource is created
-        """
-        spec = PolicySpec.model_validate(body["spec"])
-        policy = await self.resolve_minio_policy_spec(spec, body)
-        await self.create_minio_policy(policy)
-        patch.status["currentSpec"] = spec.model_dump(by_alias=True)
-
-    @operator_core.hook("update", "bfiola.dev", "v1", "miniopolicies")
-    async def on_policy_update(self, *, body: kopf.Body, patch: kopf.Patch, **kwargs):
-        """
-        Called when a bfiola.dev/v1/MinioPolicy resource is updated
-        """
-        kopf_logger: logging.Logger = kwargs["logger"]
-        new_spec = PolicySpec.model_validate(body["spec"])
-        current_spec = body["status"].get("currentSpec")
-
-        # handle updates to resources that previously failed to create
-        if not current_spec:
-            policy = await self.resolve_minio_policy_spec(new_spec, body)
-            await self.create_minio_policy(policy)
-            patch.status["currentSpec"] = new_spec.model_dump(by_alias=True)
-            return
-
-        current_spec = PolicySpec.model_validate(current_spec)
-        immutable = {("tenantRef",), ("name",)}
-        diff = operator_core.get_diff(current_spec, new_spec)
-        diff = operator_core.filter_immutable_diff_items(diff, immutable, kopf_logger)
-        for item in diff:
-            current_spec = operator_core.apply_diff_item(current_spec, item)
-            policy = await self.resolve_minio_policy_spec(current_spec, body)
-            await self.update_minio_policy(policy)
-            patch.status["currentSpec"] = current_spec.model_dump(by_alias=True)
-
-    @operator_core.hook("delete", "bfiola.dev", "v1", "miniopolicies")
-    async def on_policy_delete(self, body: kopf.Body, patch: kopf.Patch, **kwargs):
-        """
-        Called when a bfiola.dev/v1/MinioPolicy resource is deleted
-        """
-        try:
-            current_spec = body["status"]["currentSpec"]
-            current_spec = PolicySpec.model_validate(current_spec)
-            policy = await self.resolve_minio_policy_spec(current_spec, body)
-        except Exception as e:
-            return
-        await self.delete_minio_policy(policy)
-
-    async def resolve_minio_policy_binding_spec(
-        self,
-        policy_binding_spec: PolicyBindingSpec,
-        body: kopf.Body,
-    ) -> PolicyBinding:
+    async def resolve_minio_policy_binding(self, resource: resources.MinioPolicyBinding) -> PolicyBinding:
         """
         Resolves a policy binding spec to a policy binding - translating references to actual values.
         """
-        namespace = operator_core.resource_namespace(body)
+        namespace = resource.metadata.namespace or "default"
 
-        resource = operator_core.ResourceRef(
-            api_version="bfiola.dev/v1",
-            plural="miniopolicybindings",
-            name=body["metadata"]["name"],
-            namespace=namespace,
+        tenant_resource = await self.kube_client.get(
+            resources.Tenant,
+            name=resource.spec.tenantRef.name,
+            namespace=resource.spec.tenantRef.namespace or namespace,
         )
-
-        tenant_ref = operator_core.ResourceRef(
-            api_version="minio.min.io/v2",
-            plural="tenants",
-            name=policy_binding_spec.tenant_ref.name,
-            namespace=policy_binding_spec.tenant_ref.namespace or namespace,
-        )
-        tenant = await self.get_tenant(tenant_ref)
+        tenant = await self.resolve_tenant(tenant_resource)
 
         return PolicyBinding(
-            group=policy_binding_spec.group,
-            policy=policy_binding_spec.policy,
-            resource=resource,
+            group=resource.spec.group,
+            policy=resource.spec.policy,
             tenant=tenant,
-            user=policy_binding_spec.user,
+            user=resource.spec.user,
         )
 
-    async def create_minio_policy_binding(self, policy_binding: PolicyBinding):
+    async def create_minio_policy_binding(self, resource: resources.MinioPolicyBinding, **kwargs):
         """
-        Creates a new policy binding given the provided policy binding
+        Attaches a user/group to a policy
         """
-        async with self.create_minio_admin_client(
-            policy_binding.tenant
-        ) as minio_admin_client:
+        policy_binding = await self.resolve_minio_policy_binding(resource)
+
+        async with self.create_minio_admin_client(policy_binding.tenant) as minio_admin_client:
 
             def inner():
-                try:
-                    minio_admin_client.policy_set(
-                        policy_binding.policy,
-                        group=policy_binding.group,
-                        user=policy_binding.user,
-                    )
-                except minio.error.MinioAdminException as e:
-                    if e._code == "400":
-                        if "policy change is already in effect" in e._body:
-                            raise operator_core.OperatorError(f"policy binding exists")
-                    raise e
+                minio_admin_client.policy_set(
+                    policy_binding.policy,
+                    group=policy_binding.group,
+                    user=policy_binding.user,
+                )
 
-            await operator_core.run_sync(inner)
+            await self.run_sync(inner)
 
-    async def delete_minio_policy_binding(self, policy_binding: PolicyBinding):
+    async def delete_minio_policy_binding(self, resource: resources.MinioPolicyBinding, **kwargs):
         """
-        Deletes an existing policy binding given the provided policy binding
+        Detaches a user/group from a policy
         """
-        async with self.create_minio_admin_client(
-            policy_binding.tenant
-        ) as minio_admin_client:
+        policy_binding = await self.resolve_minio_policy_binding(resource)
+
+        async with self.create_minio_admin_client(policy_binding.tenant) as minio_admin_client:
 
             def inner():
                 try:
@@ -1102,70 +656,4 @@ class Operator(operator_core.Operator):
                             return
                     raise e
 
-            await operator_core.run_sync(inner)
-
-    @operator_core.hook("create", "bfiola.dev", "v1", "miniopolicybindings")
-    async def on_policy_binding_create(
-        self, body: kopf.Body, patch: kopf.Patch, **kwargs
-    ):
-        """
-        Called when a bfiola.dev/v1/MinioPolicyBinding resource is created
-        """
-        spec = PolicyBindingSpec.model_validate(body["spec"])
-        policy_binding = await self.resolve_minio_policy_binding_spec(spec, body)
-        await self.create_minio_policy_binding(policy_binding)
-        patch.status["currentSpec"] = spec.model_dump(by_alias=True)
-
-    @operator_core.hook("update", "bfiola.dev", "v1", "miniopolicybindings")
-    async def on_policy_binding_update(
-        self, *, body: kopf.Body, patch: kopf.Patch, **kwargs
-    ):
-        """
-        Called when a bfiola.dev/v1/MinioPolicyBinding resource is updated
-        """
-        kopf_logger: logging.Logger = kwargs["logger"]
-        new_spec = PolicyBindingSpec.model_validate(body["spec"])
-        current_spec = body["status"].get("currentSpec")
-
-        # handle updates to resources that previously failed to create
-        if not current_spec:
-            policy_binding = await self.resolve_minio_policy_binding_spec(
-                new_spec, body
-            )
-            await self.create_minio_policy_binding(policy_binding)
-            patch.status["currentSpec"] = new_spec.model_dump(by_alias=True)
-            return
-
-        current_spec = PolicyBindingSpec.model_validate(current_spec)
-        immutable: set[tuple[str, ...]] = {("tenantRef",)}
-        diff = operator_core.get_diff(current_spec, new_spec)
-        diff = operator_core.filter_immutable_diff_items(diff, immutable, kopf_logger)
-        for item in diff:
-            policy_binding = await self.resolve_minio_policy_binding_spec(
-                current_spec, body
-            )
-            await self.delete_minio_policy_binding(policy_binding)
-            patch.status["currentSpec"] = None
-            current_spec = operator_core.apply_diff_item(current_spec, item)
-            policy_binding = await self.resolve_minio_policy_binding_spec(
-                current_spec, body
-            )
-            await self.create_minio_policy_binding(policy_binding)
-            patch.status["currentSpec"] = current_spec.model_dump(by_alias=True)
-
-    @operator_core.hook("delete", "bfiola.dev", "v1", "miniopolicybindings")
-    async def on_policy_binding_delete(
-        self, body: kopf.Body, patch: kopf.Patch, **kwargs
-    ):
-        """
-        Called when a bfiola.dev/v1/MinioPolicyBinding resource is deleted
-        """
-        try:
-            current_spec = body["status"]["currentSpec"]
-            current_spec = PolicyBindingSpec.model_validate(current_spec)
-            policy_binding = await self.resolve_minio_policy_binding_spec(
-                current_spec, body
-            )
-        except Exception as e:
-            return
-        await self.delete_minio_policy_binding(policy_binding)
+            await self.run_sync(inner)

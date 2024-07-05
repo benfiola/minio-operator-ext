@@ -6,7 +6,6 @@ import click
 import dotenv
 import pydantic
 import uvloop
-
 from minio_operator_ext.logs import LogLevel, configure_logging
 from minio_operator_ext.operator import Operator
 
