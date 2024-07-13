@@ -1,3 +1,5 @@
+from typing import Any
+
 import operator_core
 import pydantic
 
@@ -93,11 +95,34 @@ class MinioPolicy(operator_core.NamespacedResource[MinioPolicySpec]):
     __oc_immutable_fields__ = {("name",), ("tenantRef",)}
 
 
+class MinioPolicyIdentity(pydantic.BaseModel):
+    builtin: str | None = None
+    ldap: str | None = None
+
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def one_of_builtin_or_ldap(cls, data: Any) -> Any:
+        builtin = data.get("builtin")
+        ldap = data.get("ldap")
+        if (builtin is not None) == (ldap is not None):
+            raise ValueError(f"only one of [builtin, ldap] must be defined")
+        return data
+
+
 class MinioPolicyBindingSpec(pydantic.BaseModel):
     policy: str
     tenantRef: TenantRef
-    group: str | None = None
-    user: str | None = None
+    group: MinioPolicyIdentity | None = None
+    user: MinioPolicyIdentity | None = None
+
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def one_of_group_or_user(cls, data: Any) -> Any:
+        user = data.get("user")
+        group = data.get("group")
+        if (user is not None) == (group is not None):
+            raise ValueError(f"only one of [user, group] must be defined")
+        return data
 
 
 class MinioPolicyBinding(operator_core.NamespacedResource[MinioPolicyBindingSpec]):
@@ -124,15 +149,3 @@ class Tenant(operator_core.NamespacedResource[TenantSpec]):
         "kind": "Tenant",
         "plural": "tenants",
     }
-
-
-__all__ = [
-    "MinioUser",
-    "MinioGroup",
-    "MinioGroupBinding",
-    "MinioPolicy",
-    "MinioPolicyBinding",
-    "SecretRef",
-    "Tenant",
-    "TenantRef",
-]

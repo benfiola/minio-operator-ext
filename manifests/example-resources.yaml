@@ -11,18 +11,18 @@ spec:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: user
+  name: builtin-user
 stringData:
   secretKey: password
 ---
 apiVersion: bfiola.dev/v1
 kind: MinioUser
 metadata:
-  name: user
+  name: builtin-user
 spec:
-  accessKey: user
+  accessKey: builtin-user
   secretKeyRef:
-    name: user
+    name: builtin-user
     key: secretKey
   tenantRef:
     namespace: minio-tenant
@@ -31,9 +31,9 @@ spec:
 apiVersion: bfiola.dev/v1
 kind: MinioGroup
 metadata:
-  name: group
+  name: builtin-group
 spec:
-  name: group
+  name: builtin-group
   tenantRef:
     namespace: minio-tenant
     name: myminio
@@ -41,13 +41,13 @@ spec:
 apiVersion: bfiola.dev/v1
 kind: MinioGroupBinding
 metadata:
-  name: user-to-group
+  name: builtin-user-to-builtin-group
 spec:
-  group: group
+  group: builtin-group
   tenantRef:
     namespace: minio-tenant
     name: myminio
-  user: user
+  user: builtin-user
 ---
 apiVersion: bfiola.dev/v1
 kind: MinioPolicy
@@ -79,20 +79,46 @@ spec:
 apiVersion: bfiola.dev/v1
 kind: MinioPolicyBinding
 metadata:
-  name: user-to-policy
+  name: builtin-user-to-policy
 spec:
   policy: policy
   tenantRef:
     namespace: minio-tenant
     name: myminio
-  user: user
+  user:
+    builtin: builtin-user
 ---
 apiVersion: bfiola.dev/v1
 kind: MinioPolicyBinding
 metadata:
-  name: group-to-policy
+  name: builtin-group-to-policy
 spec:
-  group: group
+  group:
+    builtin: builtin-group
+  policy: policy
+  tenantRef:
+    namespace: minio-tenant
+    name: myminio
+---
+apiVersion: bfiola.dev/v1
+kind: MinioPolicyBinding
+metadata:
+  name: ldap-user-to-policy
+spec:
+  policy: policy
+  tenantRef:
+    namespace: minio-tenant
+    name: myminio
+  user:
+    ldap: ldap-user1
+---
+apiVersion: bfiola.dev/v1
+kind: MinioPolicyBinding
+metadata:
+  name: ldap-group-to-policy
+spec:
+  group:
+    ldap: "cn=ldap-group,ou=users,dc=example,dc=org"
   policy: policy
   tenantRef:
     namespace: minio-tenant

@@ -51,13 +51,13 @@ I personally use [vscode](https://code.visualstudio.com/) as an IDE. For a consi
 
 NOTE: Helper scripts are written under the assumption that they're being executed within a dev container.
 
-### Creating a cluster
+### Creating a development environment
 
 From the project root, run the following to create a development cluster to test the operator with:
 
 ```shell
 cd /workspaces/minio-operator-ext
-./scripts/dev.sh
+./dev/create-cluster.sh
 ```
 
 This will:
@@ -66,15 +66,26 @@ This will:
 - Create a new dev cluster
 - Install the minio operator
 - Create a minio tenant
+- Deploy an ldap server
 - Apply the [custom resources](./manifests/crds.yaml)
 - Apply the [example resources](./manifests/example-resources.yaml)
-- Set a rule in /etc/hosts for the internal service name of the minio tenant
 - Waits for minio tenant to finish deploying
-- Forward the minio tenant service to localhost
+- Forward all services locally under their cluster-local DNS names
+
+### Testing LDAP identities
+
+After creating a local development cluster, you can configure minio to use the deployed LDAP server as its identity provider:
+
+```shell
+cd /workspaces/minio-operator-ext
+./dev/use-ldap.sh
+```
+
+NOTE: With an identity provider configured, attempts to operate on builtin identities will fail.
 
 ### Creating a launch script
 
-Copy the [dev.template.py](./dev.template.py) script to `dev.py`, then run it to start the operator.
+Copy the [dev.template.py](./dev.template.py) script to `dev.py`, then run it to start the operator against the local development environment.
 
 If placed in the top-level directory, `dev.py` is gitignored and you can change this file as needed without worrying about committing it to git.
 

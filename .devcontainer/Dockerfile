@@ -77,3 +77,22 @@ RUN apt -y install curl && \
     tar xvzf k9s.tar.gz && \
     rm -rf k9s.tar.gz
 ENV PATH="/opt/k9s:${PATH}"
+
+# install kubefwd
+RUN apt -y install curl && \
+    mkdir -p /opt/kubefwd && \
+    cd /opt/kubefwd && \
+    curl -fsSL -o kubefwd.tar.gz "https://github.com/txn2/kubefwd/releases/download/1.22.5/kubefwd_Linux_${TARGETARCH}.tar.gz" && \
+    tar xvzf kubefwd.tar.gz && \
+    rm -rf kubefwd.tar.gz
+ENV PATH="/opt/kubefwd:${PATH}"
+
+# install mc
+RUN apt -y install curl && \
+    mkdir -p /opt/mc && \
+    cd /opt/mc && \
+    curl -fsSL -o mc "https://dl.min.io/client/mc/release/linux-${TARGETARCH}/mc" && \
+    chmod +x mc
+ENV MC_DISABLE_PAGER=1
+ENV MC_INSECURE=1
+ENV PATH="/opt/mc:${PATH}"

@@ -1,7 +1,7 @@
 #!/bin/sh 
 set -e
 
-for command in minikube helm kubectl; do
+for command in minikube helm kubectl mc kubefwd; do
     if ! command -v "${command}" > /dev/null; then
         2>&1 echo "error: ${command} not installed"
         exit 1
@@ -33,32 +33,36 @@ helm install \
   --repo=https://operator.min.io \
   tenant tenant
 
+echo "deploy openldap"
+kubectl apply -f ./dev/openldap.yaml
+
 echo "deploy custom resources"
 kubectl apply -f ./manifests/crds.yaml
 
 echo "deploy test resources"
 kubectl apply -f ./manifests/example-resources.yaml
 
-echo "adding /etc/hosts entry for minio tenant service"
-if [ ! -f "/etc/hosts.bak" ]; then
-  cp /etc/hosts /etc/hosts.bak
-fi
-cp /etc/hosts.bak /etc/hosts
-echo "127.0.0.1 minio.minio-tenant.svc" >> /etc/hosts
-
-echo "waiting for minio tenant to be ready"
-while true; do
-  set +e
+code="1"
+set +e
+while [ "${code}" != "0" ]; do
+  echo "wait for minio tenant to be ready"
   kubectl wait --namespace minio-tenant --selector v1.min.io/tenant=myminio --for=condition=ready pod --timeout=0s > /dev/null 2>&1
   code="$?"
-  set -e
-  if [ "${code}" = "0" ]; then
-    echo "minio tenant ready"
-    break
-  fi
-  echo "minio tenant not ready"
   sleep 5
 done
+set -e
+echo "minio tenant ready"
 
-echo "forwarding minio tenant service port"
-kubectl port-forward --namespace minio-tenant services/minio --pod-running-timeout=1h 443:443
+echo "forwarding ports"
+./dev/forward-ports.sh
+
+code="1"
+set +e
+while [ "${code}" != "0" ]; do
+  echo "attempting to configure mc client"
+  mc alias set local https://minio.minio-tenant.svc minio minio123  > /dev/null 2>&1
+  code="$?"
+  sleep 5;
+done;
+set -e
+echo "mc client configured"
