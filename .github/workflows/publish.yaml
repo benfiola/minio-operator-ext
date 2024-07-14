@@ -12,7 +12,7 @@ jobs:
       contents: write
     environment:
       name: docker
-      url: https://hub.docker.com/repository/docker/benfiola/minio-operator-ext/general
+      url: https://hub.docker.com/r/benfiola/minio-operator-ext
     steps:
       - name: checkout
         uses: actions/checkout@v4
