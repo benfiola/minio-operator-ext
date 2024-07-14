@@ -313,9 +313,19 @@ spec:
                 policy:
                   type: string
                 user:
-                  type: string
+                  type: object
+                  properties:
+                    builtin:
+                      type: string
+                    ldap:
+                      type: string
                 group:
-                  type: string
+                  type: object
+                  properties:
+                    builtin:
+                      type: string
+                    ldap:
+                      type: string
             status:
               type: object
               properties:

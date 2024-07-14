@@ -5,12 +5,13 @@ import io
 import logging
 import pathlib
 import tempfile
-from typing import Any, AsyncGenerator, Callable, TypeVar, cast
+from typing import AsyncGenerator, Callable, TypeVar, cast
 
 import dotenv
 import lightkube.resources.core_v1
 import minio
 import minio.credentials.providers
+import minio_operator_ext.clients as clients
 import minio_operator_ext.resources as resources
 import operator_core
 import pydantic
@@ -87,8 +88,8 @@ class PolicyBinding(pydantic.BaseModel):
     Represents a policy binding with all references resolved
     """
 
-    group: str | None
-    user: str | None
+    group: resources.MinioPolicyIdentity | None
+    user: resources.MinioPolicyIdentity | None
     policy: str
     tenant: Tenant
 
@@ -153,12 +154,12 @@ class Operator(operator_core.Operator):
             yield pathlib.Path(handle.name)
 
     @contextlib.asynccontextmanager
-    async def create_minio_client(self, tenant: Tenant) -> AsyncGenerator[minio.Minio, None]:
+    async def create_minio_client(self, tenant: Tenant) -> AsyncGenerator[clients.Minio, None]:
         """
         Creates a minio client from the given tenant.
         """
         async with self.temporary_file(suffix=".crt") as ca_cert:
-            client = minio.Minio(
+            client = clients.Minio(
                 access_key=tenant.access_key,
                 endpoint=tenant.endpoint,
                 secret_key=tenant.secret_key,
@@ -173,12 +174,12 @@ class Operator(operator_core.Operator):
     async def create_minio_admin_client(
         self,
         tenant: Tenant,
-    ) -> AsyncGenerator[minio.MinioAdmin, None]:
+    ) -> AsyncGenerator[clients.MinioAdmin, None]:
         """
         Creates a minio admin client from the given tenant
         """
         async with self.temporary_file(suffix=".crt") as ca_cert:
-            client = minio.MinioAdmin(
+            client = clients.MinioAdmin(
                 credentials=minio.credentials.providers.StaticProvider(
                     access_key=tenant.access_key, secret_key=tenant.secret_key
                 ),
@@ -627,11 +628,22 @@ class Operator(operator_core.Operator):
         async with self.create_minio_admin_client(policy_binding.tenant) as minio_admin_client:
 
             def inner():
-                minio_admin_client.policy_set(
-                    policy_binding.policy,
-                    group=policy_binding.group,
-                    user=policy_binding.user,
-                )
+                group = policy_binding.group
+                user = policy_binding.user
+
+                builtin_group = group and group.builtin
+                builtin_user = user and user.builtin
+                ldap_group = group and group.ldap
+                ldap_user = user and user.ldap
+
+                if builtin_group or builtin_user:
+                    minio_admin_client.policy_set(
+                        policy_binding.policy,
+                        group=builtin_group,
+                        user=builtin_user,
+                    )
+                elif ldap_group or ldap_user:
+                    minio_admin_client.ldap_policy_set(policy_binding.policy, group=ldap_group, user=ldap_user)
 
             await self.run_sync(inner)
 
@@ -645,11 +657,26 @@ class Operator(operator_core.Operator):
 
             def inner():
                 try:
-                    minio_admin_client.policy_unset(
-                        policy_binding.policy,
-                        group=policy_binding.group,
-                        user=policy_binding.user,
-                    )
+                    group = policy_binding.group
+                    user = policy_binding.user
+
+                    builtin_group = group and group.builtin
+                    builtin_user = user and user.builtin
+                    ldap_group = group and group.ldap
+                    ldap_user = user and user.ldap
+
+                    if builtin_group or builtin_user:
+                        minio_admin_client.policy_unset(
+                            policy_binding.policy,
+                            group=builtin_group,
+                            user=builtin_user,
+                        )
+                    elif ldap_group or ldap_user:
+                        minio_admin_client.ldap_policy_unset(
+                            policy_binding.policy,
+                            group=ldap_group,
+                            user=ldap_user,
+                        )
                 except minio.error.MinioAdminException as e:
                     if e._code == "400":
                         if "policy change is already in effect" in e._body:
