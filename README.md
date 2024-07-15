@@ -2,17 +2,27 @@
 
 The [MinIO Operator](https://github.com/minio/operator) currently is capable of deploying MinIO tenants - but does not expose any mechanisms by which one could declaratively manage resources within a MinIO tenant.
 
-This repo extends the MinIO Operator and provides an additional [operator](./minio_operator_ext/operator.py) and [CRDs](./manifests/crds.yaml) that allow one to declaratiely manage users, buckets, policies and policy bindings.
+This repo extends the MinIO Operator (i.e., minio-operator-ext(ension)) - providing an additional [operator](./minio_operator_ext/operator.py) and [CRDs](./manifests/crds.yaml) that allow one to declaratiely manage users, buckets, policies and policy bindings.
 
-This is primarily a stopgap until support for minio resources lands in the official operator - but fulfills a personal need in the meantime. Feel free to fork or provide PRs to improve the operator!
+## Resources
 
-## Deployment
+Currently, this operator manages the following resources:
 
-To deploy the operator:
+- Users (`MinioUser`)
+- Buckets (`MinioBucket`)
+- Groups (`MinioGroup`)
+- Group Membership (`MinioGroupBinding`)
+- Policies (`MinioPolicy`)
+- Policy Membership (`MinioPolicyBinding`)
+
+Examples of these resources can be found [here](./manifests/example-resources.yaml).
+
+## Installation
+
+Installation is a two-step process:
 
 - Deploy the [CRDs](./manifests/crds.yaml)
 - Deploy the operator ([example](./manifests/example-deployment.yaml))
-- Deploy some custom resources ([example](./manifests/example-resources.yaml))
 
 ### Image
 
@@ -29,10 +39,13 @@ The following arguments/environment variables configure the operator:
 
 The operator requires the a service account with the following RBAC settings:
 
-- Get/Watch/List/Patch `minio.min.io/v2/Tenants` - the operator needs to discover and inspect minio tenants. Patch is required to allow `kopf` to add finalizers to the tenants so the framework can monitor resource deletion.
-- Create `Events` - allows `kopf` to publish operator events
-- Get `ConfigMaps|Secrets|Services` - the operator needs to inspect configmaps to obtain CAs used to generate minio tenant self-signed certificates, inspect tenant secrets to obtain admin credentials and tenant services to determine the internal minio console endpoint
-- Get/List/Patch/Watch `bfiola.dev/v1/MinioBuckets|MinioGroups|MinioGroupBindings|MinioPolicies|MinioUsers|MinioPolicyBindings` - the operator needs to manage its own resources
+| Resource               | Verbs                   | Why                                                                                                                 |
+| ---------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| minio.min.io/v2/Tenant | Get, Watch, List, Patch | Used to discover MinIO tenants                                                                                      |
+| v1/Event               | Create                  | Used to publish events whenever activity is performed                                                               |
+| v1/ConfigMap           | Get                     | Used to obtain the CA bundle used to generate a MinIO tenant's TLS certificates (- for HTTP client cert validation) |
+| v1/Secret              | Get                     | Used to fetch a MinIO tenant's configuration (which is stored as a secret)                                          |
+| v1/Services            | Get                     | Used to determine a MinIO tenant's internal endpoint                                                                |
 
 ## Limitations
 
