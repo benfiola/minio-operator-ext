@@ -33,7 +33,7 @@
             }
           ]
         },
-        "python.defaultInterpreterPath": "/asdf/installs/python/3.10.12/bin/python3",
+        "python.defaultInterpreterPath": "/venv/bin/python3",
         "[python]": {
           "editor.defaultFormatter": "ms-python.black-formatter"
         }
