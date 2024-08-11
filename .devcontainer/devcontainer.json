@@ -2,9 +2,6 @@
   "build": {
     "dockerfile": "Dockerfile"
   },
-  "features": {
-    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
-  },
   "customizations": {
     "vscode": {
       "extensions": [
@@ -41,6 +38,12 @@
           "editor.defaultFormatter": "ms-python.black-formatter"
         }
       }
+    }
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/python": {
+      "pythonVersion": "3.10.2"
     }
   },
   "postCreateCommand": ".devcontainer/post-create.sh"

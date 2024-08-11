@@ -1,4 +1,4 @@
-FROM python:3.10.12 as operator
+FROM python:3.10.12 AS operator
 
 EXPOSE 8888
 

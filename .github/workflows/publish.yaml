@@ -22,12 +22,44 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-      - name: run
-        id: main
+      - name: download versionctl
+        run: |
+          curl -fsSL -o /usr/local/bin/versionctl "https://github.com/benfiola/versionctl/releases/latest/download/versionctl-linux-amd64"
+          chmod +x /usr/local/bin/versionctl
+      - name: calculate facts
+        id: facts
+        run: |
+          version="$(versionctl next)"
+          tag="$(versionctl convert "${version}" git)"
+          image_base="docker.io/benfiola/minio-operator-ext"
+          image_tag="$(versionctl convert "${version}" docker)"
+          image="${image_base}:${image_tag}"
+          latest_image="${image_base}:latest"
+          publish_latest="0"
+          if [ "${{github.ref}}" = "refs/heads/main" ]; then
+            publish_latest="1"
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "image=${image}" >> "${GITHUB_OUTPUT}"
+          echo "latest_image=${latest_image}" >> "${GITHUB_OUTPUT}"
+          echo "publish_latest=${publish_latest}" >> "${GITHUB_OUTPUT}"
+      - name: check project
+        run: |
+          versionctl set "${{steps.facts.outputs.version}}" pyproject.toml
+          pip install --no-color --progress-bar=off --editable ".[dev]"
+          black --check .
+      - name: prepare docker
         run: |
           docker buildx create --platform linux/arm64,linux/amd64 --use
-          pip install --no-color --progress-bar=off --editable ".[dev]"
-          devtools publish-github-action docker --token "${{secrets.DOCKER_TOKEN}}"
+          docker login --username=benfiola --password "${{secrets.DOCKER_TOKEN}}"
+      - name: publish image
+        run: |
+          docker buildx build --platform=linux/arm64,linux/amd64 --progress=plain --push --tag="${{steps.facts.outputs.image}}" .
+      - name: publish latest image
+        if: "${{steps.facts.outputs.publish_latest == '1'}}"
+        run: |
+          docker buildx build --platform=linux/arm64,linux/amd64 --progress=plain --push --tag="${{steps.facts.outputs.latest_image}}" .
       - name: tag
         uses: actions/github-script@v7
         with:
@@ -35,6 +67,6 @@ jobs:
             github.rest.git.createRef({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              ref: 'refs/tags/${{steps.main.outputs.tag}}',
+              ref: 'refs/tags/${{steps.facts.outputs.tag}}',
               sha: context.sha
             })

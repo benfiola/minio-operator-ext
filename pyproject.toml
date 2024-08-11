@@ -10,7 +10,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "bfiola-devtools"
+    "black"
 ]
 
 [project.scripts]

@@ -154,7 +154,9 @@ class Operator(operator_core.Operator):
             yield pathlib.Path(handle.name)
 
     @contextlib.asynccontextmanager
-    async def create_minio_client(self, tenant: Tenant) -> AsyncGenerator[clients.Minio, None]:
+    async def create_minio_client(
+        self, tenant: Tenant
+    ) -> AsyncGenerator[clients.Minio, None]:
         """
         Creates a minio client from the given tenant.
         """
@@ -230,7 +232,9 @@ class Operator(operator_core.Operator):
         access_key = env_data["MINIO_ROOT_USER"]
         secret_key = env_data["MINIO_ROOT_PASSWORD"]
         if not access_key or not secret_key:
-            raise operator_core.OperatorError(f"credentials not found in secret: {namespace}/{configuration_name}")
+            raise operator_core.OperatorError(
+                f"credentials not found in secret: {namespace}/{configuration_name}"
+            )
 
         # determine endpoint
         # (NOTE: assumes service name 'minio' from helm templates)
@@ -257,7 +261,9 @@ class Operator(operator_core.Operator):
             service_port = port["port"]
             break
         if not service_port:
-            raise operator_core.OperatorError(f"port not found in service: {namespace}/{service_name}")
+            raise operator_core.OperatorError(
+                f"port not found in service: {namespace}/{service_name}"
+            )
 
         svc_namespace = service["metadata"]["namespace"]
         svc_name = service["metadata"]["name"]
@@ -297,7 +303,9 @@ class Operator(operator_core.Operator):
                     minio_client.make_bucket(bucket.name)
                 except minio.error.S3Error as e:
                     if e.code == "BucketAlreadyOwnedByYou":
-                        raise operator_core.OperatorError(f"bucket already exists: {bucket.name}")
+                        raise operator_core.OperatorError(
+                            f"bucket already exists: {bucket.name}"
+                        )
                     raise e
 
             await self.run_sync(inner)
@@ -360,7 +368,9 @@ class Operator(operator_core.Operator):
                 # NOTE: the `user_add` endpoint will succeed even if a user with the access key already exists
                 try:
                     minio_admin_client.user_info(user.access_key)
-                    raise operator_core.OperatorError(f"user already exists: {user.access_key}")
+                    raise operator_core.OperatorError(
+                        f"user already exists: {user.access_key}"
+                    )
                 except minio.error.MinioAdminException as e:
                     if e._code != "404":
                         raise e
@@ -430,7 +440,9 @@ class Operator(operator_core.Operator):
                 # NOTE: the `group_add` endpoint will succeed even when a group already exists
                 try:
                     minio_admin_client.group_info(group.name)
-                    raise operator_core.OperatorError(f"group already exists: {group.name}")
+                    raise operator_core.OperatorError(
+                        f"group already exists: {group.name}"
+                    )
                 except minio.error.MinioAdminException as e:
                     if e._code != "404":
                         raise e
@@ -458,7 +470,9 @@ class Operator(operator_core.Operator):
 
             await self.run_sync(inner)
 
-    async def resolve_minio_group_binding(self, resource: resources.MinioGroupBinding) -> GroupBinding:
+    async def resolve_minio_group_binding(
+        self, resource: resources.MinioGroupBinding
+    ) -> GroupBinding:
         """
         Resolves a group binding spec to a group binding - translating references to actual values.
         """
@@ -477,13 +491,17 @@ class Operator(operator_core.Operator):
             user=resource.spec.user,
         )
 
-    async def create_minio_group_binding(self, resource: resources.MinioGroupBinding, **kwargs):
+    async def create_minio_group_binding(
+        self, resource: resources.MinioGroupBinding, **kwargs
+    ):
         """
         Adds a user to a group
         """
         group_binding = await self.resolve_minio_group_binding(resource)
 
-        async with self.create_minio_admin_client(group_binding.tenant) as minio_admin_client:
+        async with self.create_minio_admin_client(
+            group_binding.tenant
+        ) as minio_admin_client:
 
             def inner():
                 # NOTE: ensure group already exists before calling 'group_add' to modify members
@@ -492,25 +510,35 @@ class Operator(operator_core.Operator):
                 except minio.error.MinioAdminException as e:
                     if e._code != "404":
                         raise e
-                    raise operator_core.OperatorError(f"group does not exist: {group_binding.group}", recoverable=True)
+                    raise operator_core.OperatorError(
+                        f"group does not exist: {group_binding.group}", recoverable=True
+                    )
 
                 # NOTE: this api is incorrectly typed (the member list is typed as 'str' - should be 'list[str]')
-                minio_admin_client.group_add(group_binding.group, cast(str, [group_binding.user]))
+                minio_admin_client.group_add(
+                    group_binding.group, cast(str, [group_binding.user])
+                )
 
             await self.run_sync(inner)
 
-    async def delete_minio_group_binding(self, resource: resources.MinioGroupBinding, **kwargs):
+    async def delete_minio_group_binding(
+        self, resource: resources.MinioGroupBinding, **kwargs
+    ):
         """
         Removes a user from a group
         """
         group_binding = await self.resolve_minio_group_binding(resource)
 
-        async with self.create_minio_admin_client(group_binding.tenant) as minio_admin_client:
+        async with self.create_minio_admin_client(
+            group_binding.tenant
+        ) as minio_admin_client:
 
             def inner():
                 try:
                     # NOTE: this api is incorrectly typed (the member list is typed as 'str' - should be 'list[str]')
-                    minio_admin_client.group_remove(group_binding.group, cast(str, [group_binding.user]))
+                    minio_admin_client.group_remove(
+                        group_binding.group, cast(str, [group_binding.user])
+                    )
                 except minio.error.MinioAdminException as e:
                     if e._code == "404":
                         return
@@ -564,7 +592,9 @@ class Operator(operator_core.Operator):
                     # NOTE: the `policy_add` endpoint will succeed even if a policy with the given name already exists
                     try:
                         minio_admin_client.policy_info(policy.name)
-                        raise operator_core.OperatorError(f"policy already exists: {policy.name}")
+                        raise operator_core.OperatorError(
+                            f"policy already exists: {policy.name}"
+                        )
                     except minio.error.MinioAdminException as e:
                         if e._code != "404":
                             raise e
@@ -599,7 +629,9 @@ class Operator(operator_core.Operator):
 
             await self.run_sync(inner)
 
-    async def resolve_minio_policy_binding(self, resource: resources.MinioPolicyBinding) -> PolicyBinding:
+    async def resolve_minio_policy_binding(
+        self, resource: resources.MinioPolicyBinding
+    ) -> PolicyBinding:
         """
         Resolves a policy binding spec to a policy binding - translating references to actual values.
         """
@@ -619,13 +651,17 @@ class Operator(operator_core.Operator):
             user=resource.spec.user,
         )
 
-    async def create_minio_policy_binding(self, resource: resources.MinioPolicyBinding, **kwargs):
+    async def create_minio_policy_binding(
+        self, resource: resources.MinioPolicyBinding, **kwargs
+    ):
         """
         Attaches a user/group to a policy
         """
         policy_binding = await self.resolve_minio_policy_binding(resource)
 
-        async with self.create_minio_admin_client(policy_binding.tenant) as minio_admin_client:
+        async with self.create_minio_admin_client(
+            policy_binding.tenant
+        ) as minio_admin_client:
 
             def inner():
                 group = policy_binding.group
@@ -643,17 +679,23 @@ class Operator(operator_core.Operator):
                         user=builtin_user,
                     )
                 elif ldap_group or ldap_user:
-                    minio_admin_client.ldap_policy_set(policy_binding.policy, group=ldap_group, user=ldap_user)
+                    minio_admin_client.ldap_policy_set(
+                        policy_binding.policy, group=ldap_group, user=ldap_user
+                    )
 
             await self.run_sync(inner)
 
-    async def delete_minio_policy_binding(self, resource: resources.MinioPolicyBinding, **kwargs):
+    async def delete_minio_policy_binding(
+        self, resource: resources.MinioPolicyBinding, **kwargs
+    ):
         """
         Detaches a user/group from a policy
         """
         policy_binding = await self.resolve_minio_policy_binding(resource)
 
-        async with self.create_minio_admin_client(policy_binding.tenant) as minio_admin_client:
+        async with self.create_minio_admin_client(
+            policy_binding.tenant
+        ) as minio_admin_client:
 
             def inner():
                 try:
