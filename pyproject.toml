@@ -6,6 +6,7 @@ dependencies = [
     "minio",
     "bfiola-operator-core==2.0.1",
     "python-dotenv",
+    "uvloop"
 ]
 
 [project.optional-dependencies]
