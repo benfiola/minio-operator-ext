@@ -6,6 +6,7 @@ from minio_operator_ext.operator import Operator
 
 
 async def main():
+    configure_logging("debug")
     operator = Operator(kube_config=pathlib.Path("/root/.kube/config"))
     await operator.run()
 

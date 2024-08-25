@@ -201,7 +201,7 @@ class Operator(operator_core.Operator):
         namespace = resource.metadata.namespace or "default"
 
         # determine whether tenant uses http or https
-        secure = resource.spec.requestAutoCert
+        secure = resource.spec.request_auto_cert
 
         # if the tenant uses https, fetch ca bundle used to verify self-signed cert
         # NOTE: this will need to eventually support other certificate sources (e.g., cert-manager)
@@ -284,8 +284,8 @@ class Operator(operator_core.Operator):
         namespace = resource.metadata.namespace or "default"
         tenant_resource = await self.kube_client.get(
             resources.Tenant,
-            name=resource.spec.tenantRef.name,
-            namespace=resource.spec.tenantRef.namespace or namespace,
+            name=resource.spec.tenant_ref.name,
+            namespace=resource.spec.tenant_ref.namespace or namespace,
         )
         tenant = await self.resolve_tenant(tenant_resource)
         return Bucket(name=resource.spec.name, tenant=tenant)
@@ -336,22 +336,22 @@ class Operator(operator_core.Operator):
         secret = (
             await self.kube_client.get(
                 lightkube.resources.core_v1.Secret,
-                name=resource.spec.secretKeyRef.name,
+                name=resource.spec.secret_key_ref.name,
                 namespace=namespace,
             )
         ).to_dict()
-        secret_key = secret["data"][resource.spec.secretKeyRef.key]
+        secret_key = secret["data"][resource.spec.secret_key_ref.key]
         secret_key = base64.b64decode(secret_key).decode("utf-8")
 
         tenant_resource = await self.kube_client.get(
             resources.Tenant,
-            name=resource.spec.tenantRef.name,
-            namespace=resource.spec.tenantRef.namespace or namespace,
+            name=resource.spec.tenant_ref.name,
+            namespace=resource.spec.tenant_ref.namespace or namespace,
         )
         tenant = await self.resolve_tenant(tenant_resource)
 
         return User(
-            access_key=resource.spec.accessKey,
+            access_key=resource.spec.access_key,
             secret_key=secret_key,
             tenant=tenant,
         )
@@ -418,8 +418,8 @@ class Operator(operator_core.Operator):
 
         tenant_resource = await self.kube_client.get(
             resources.Tenant,
-            name=resource.spec.tenantRef.name,
-            namespace=resource.spec.tenantRef.namespace or namespace,
+            name=resource.spec.tenant_ref.name,
+            namespace=resource.spec.tenant_ref.namespace or namespace,
         )
         tenant = await self.resolve_tenant(tenant_resource)
 
@@ -480,8 +480,8 @@ class Operator(operator_core.Operator):
 
         tenant_resource = await self.kube_client.get(
             resources.Tenant,
-            name=resource.spec.tenantRef.name,
-            namespace=resource.spec.tenantRef.namespace or namespace,
+            name=resource.spec.tenant_ref.name,
+            namespace=resource.spec.tenant_ref.namespace or namespace,
         )
         tenant = await self.resolve_tenant(tenant_resource)
 
@@ -554,8 +554,8 @@ class Operator(operator_core.Operator):
 
         tenant_resource = await self.kube_client.get(
             resources.Tenant,
-            name=resource.spec.tenantRef.name,
-            namespace=resource.spec.tenantRef.namespace or namespace,
+            name=resource.spec.tenant_ref.name,
+            namespace=resource.spec.tenant_ref.namespace or namespace,
         )
         tenant = await self.resolve_tenant(tenant_resource)
 
@@ -639,8 +639,8 @@ class Operator(operator_core.Operator):
 
         tenant_resource = await self.kube_client.get(
             resources.Tenant,
-            name=resource.spec.tenantRef.name,
-            namespace=resource.spec.tenantRef.namespace or namespace,
+            name=resource.spec.tenant_ref.name,
+            namespace=resource.spec.tenant_ref.namespace or namespace,
         )
         tenant = await self.resolve_tenant(tenant_resource)
 

@@ -4,20 +4,20 @@ import operator_core
 import pydantic
 
 
-class TenantRef(pydantic.BaseModel):
+class TenantRef(operator_core.BaseModel):
     name: str
     namespace: str | None = None
 
 
-class SecretRef(pydantic.BaseModel):
+class SecretRef(operator_core.BaseModel):
     key: str
     name: str
     namespace: str | None = None
 
 
-class MinioBucketSpec(pydantic.BaseModel):
+class MinioBucketSpec(operator_core.BaseModel):
     name: str
-    tenantRef: TenantRef
+    tenant_ref: TenantRef
 
 
 class MinioBucket(operator_core.NamespacedResource[MinioBucketSpec]):
@@ -29,10 +29,10 @@ class MinioBucket(operator_core.NamespacedResource[MinioBucketSpec]):
     __oc_immutable_fields__ = {("name",), ("tenantRef",)}
 
 
-class MinioUserSpec(pydantic.BaseModel):
-    accessKey: str
-    secretKeyRef: SecretRef
-    tenantRef: TenantRef
+class MinioUserSpec(operator_core.BaseModel):
+    access_key: str
+    secret_key_ref: SecretRef
+    tenant_ref: TenantRef
 
 
 class MinioUser(operator_core.NamespacedResource[MinioUserSpec]):
@@ -44,9 +44,9 @@ class MinioUser(operator_core.NamespacedResource[MinioUserSpec]):
     __oc_immutable_fields__ = {("accessKey",), ("tenantRef",)}
 
 
-class MinioGroupSpec(pydantic.BaseModel):
+class MinioGroupSpec(operator_core.BaseModel):
     name: str
-    tenantRef: TenantRef
+    tenant_ref: TenantRef
 
 
 class MinioGroup(operator_core.NamespacedResource[MinioGroupSpec]):
@@ -58,9 +58,9 @@ class MinioGroup(operator_core.NamespacedResource[MinioGroupSpec]):
     __oc_immutable_fields__ = {("name",), ("tenantRef",)}
 
 
-class MinioGroupBindingSpec(pydantic.BaseModel):
+class MinioGroupBindingSpec(operator_core.BaseModel):
     group: str
-    tenantRef: TenantRef
+    tenant_ref: TenantRef
     user: str
 
 
@@ -73,16 +73,16 @@ class MinioGroupBinding(operator_core.NamespacedResource[MinioGroupBindingSpec])
     __oc_immutable_fields__ = {("group",), ("tenantRef",), ("user",)}
 
 
-class PolicyStatement(pydantic.BaseModel):
+class PolicyStatement(operator_core.BaseModel):
     action: list[str]
     effect: str
     resource: list[str]
 
 
-class MinioPolicySpec(pydantic.BaseModel):
+class MinioPolicySpec(operator_core.BaseModel):
     name: str
     statement: list[PolicyStatement]
-    tenantRef: TenantRef
+    tenant_ref: TenantRef
     version: str
 
 
@@ -95,7 +95,7 @@ class MinioPolicy(operator_core.NamespacedResource[MinioPolicySpec]):
     __oc_immutable_fields__ = {("name",), ("tenantRef",)}
 
 
-class MinioPolicyIdentity(pydantic.BaseModel):
+class MinioPolicyIdentity(operator_core.BaseModel):
     builtin: str | None = None
     ldap: str | None = None
 
@@ -109,9 +109,9 @@ class MinioPolicyIdentity(pydantic.BaseModel):
         return data
 
 
-class MinioPolicyBindingSpec(pydantic.BaseModel):
+class MinioPolicyBindingSpec(operator_core.BaseModel):
     policy: str
-    tenantRef: TenantRef
+    tenant_ref: TenantRef
     group: MinioPolicyIdentity | None = None
     user: MinioPolicyIdentity | None = None
 
@@ -134,12 +134,12 @@ class MinioPolicyBinding(operator_core.NamespacedResource[MinioPolicyBindingSpec
     __oc_immutable_fields__ = {("group",), ("policy",), ("tenantRef",), ("user",)}
 
 
-class TenantConfiguration(pydantic.BaseModel):
+class TenantConfiguration(operator_core.BaseModel):
     name: str
 
 
-class TenantSpec(pydantic.BaseModel):
-    requestAutoCert: bool
+class TenantSpec(operator_core.BaseModel):
+    request_auto_cert: bool
     configuration: TenantConfiguration
 
 

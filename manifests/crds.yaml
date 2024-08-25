@@ -27,10 +27,16 @@ spec:
             status:
               type: object
               properties:
+                synced:
+                  type: boolean
                 currentSpec:
                   type: object
                   x-kubernetes-preserve-unknown-fields: true
       additionalPrinterColumns:
+        - name: Synced
+          type: boolean
+          description: Synced
+          jsonPath: .status.synced
         - name: Tenant Namespace
           type: string
           description: Tenant Namespace
@@ -87,10 +93,16 @@ spec:
             status:
               type: object
               properties:
+                synced:
+                  type: boolean
                 currentSpec:
                   type: object
                   x-kubernetes-preserve-unknown-fields: true
       additionalPrinterColumns:
+        - name: Synced
+          type: boolean
+          description: Synced
+          jsonPath: .status.synced
         - name: Tenant Namespace
           type: string
           description: Tenant Namespace
@@ -138,10 +150,16 @@ spec:
             status:
               type: object
               properties:
+                synced:
+                  type: boolean
                 currentSpec:
                   type: object
                   x-kubernetes-preserve-unknown-fields: true
       additionalPrinterColumns:
+        - name: Synced
+          type: boolean
+          description: Synced
+          jsonPath: .status.synced
         - name: Tenant Namespace
           type: string
           description: Tenant Namespace
@@ -191,10 +209,16 @@ spec:
             status:
               type: object
               properties:
+                synced:
+                  type: boolean
                 currentSpec:
                   type: object
                   x-kubernetes-preserve-unknown-fields: true
       additionalPrinterColumns:
+        - name: Synced
+          type: boolean
+          description: Synced
+          jsonPath: .status.synced
         - name: Tenant Namespace
           type: string
           description: Tenant Namespace
@@ -264,10 +288,16 @@ spec:
             status:
               type: object
               properties:
+                synced:
+                  type: boolean
                 currentSpec:
                   type: object
                   x-kubernetes-preserve-unknown-fields: true
       additionalPrinterColumns:
+        - name: Synced
+          type: boolean
+          description: Synced
+          jsonPath: .status.synced
         - name: Tenant Namespace
           type: string
           description: Tenant Namespace
@@ -329,10 +359,16 @@ spec:
             status:
               type: object
               properties:
+                synced:
+                  type: boolean
                 currentSpec:
                   type: object
                   x-kubernetes-preserve-unknown-fields: true
       additionalPrinterColumns:
+        - name: Synced
+          type: boolean
+          description: Synced
+          jsonPath: .status.synced
         - name: Tenant Namespace
           type: string
           description: Tenant Namespace
