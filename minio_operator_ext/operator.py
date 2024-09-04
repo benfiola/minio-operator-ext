@@ -404,9 +404,8 @@ class Operator(operator_core.Operator):
                 try:
                     minio_admin_client.user_remove(user.access_key)
                 except minio.error.MinioAdminException as e:
-                    if e._code == "404":
-                        return
-                    raise e
+                    if e._code != "404":
+                        raise e
 
             await self.run_sync(inner)
 
@@ -464,9 +463,8 @@ class Operator(operator_core.Operator):
                 try:
                     minio_admin_client.group_remove(group.name)
                 except minio.error.MinioAdminException as e:
-                    if e._code == "404":
-                        return
-                    raise e
+                    if e._code != "404":
+                        raise e
 
             await self.run_sync(inner)
 
@@ -505,14 +503,7 @@ class Operator(operator_core.Operator):
 
             def inner():
                 # NOTE: ensure group already exists before calling 'group_add' to modify members
-                try:
-                    minio_admin_client.group_info(group_binding.group)
-                except minio.error.MinioAdminException as e:
-                    if e._code != "404":
-                        raise e
-                    raise operator_core.OperatorError(
-                        f"group does not exist: {group_binding.group}", recoverable=True
-                    )
+                minio_admin_client.group_info(group_binding.group)
 
                 # NOTE: this api is incorrectly typed (the member list is typed as 'str' - should be 'list[str]')
                 minio_admin_client.group_add(
@@ -540,9 +531,8 @@ class Operator(operator_core.Operator):
                         group_binding.group, cast(str, [group_binding.user])
                     )
                 except minio.error.MinioAdminException as e:
-                    if e._code == "404":
-                        return
-                    raise e
+                    if e._code != "404":
+                        raise e
 
             await self.run_sync(inner)
 
@@ -625,7 +615,11 @@ class Operator(operator_core.Operator):
         async with self.create_minio_admin_client(policy.tenant) as minio_admin_client:
 
             def inner():
-                minio_admin_client.policy_remove(policy.name)
+                try:
+                    minio_admin_client.policy_remove(policy.name)
+                except minio.error.MinioAdminException as e:
+                    if e._code != "404":
+                        raise e
 
             await self.run_sync(inner)
 
@@ -720,9 +714,10 @@ class Operator(operator_core.Operator):
                             user=ldap_user,
                         )
                 except minio.error.MinioAdminException as e:
+                    if e._code not in ["400", "404"]:
+                        raise e
                     if e._code == "400":
-                        if "policy change is already in effect" in e._body:
-                            return
-                    raise e
+                        if "policy change is already in effect" not in e._body:
+                            raise e
 
             await self.run_sync(inner)
