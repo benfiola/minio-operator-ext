@@ -1,13 +1,13 @@
-FROM python:3.10.12 AS operator
-
-EXPOSE 8888
-
+FROM golang:1.22.5 AS builder
 WORKDIR /app
+ADD cmd cmd
+ADD internal internal
+ADD pkg pkg
+ADD go.mod go.mod
+ADD go.sum go.sum
+RUN CGO_ENABLED=0 go build cmd/operator/operator.go
 
-ADD pyproject.toml pyproject.toml
-ADD setup.py setup.py
-ADD minio_operator_ext minio_operator_ext
-
-RUN pip install -e .
-ENTRYPOINT ["minio-operator-ext"]
+FROM scratch AS final
+COPY --from=builder /app/operator /operator
+ENTRYPOINT ["/operator"]
 CMD ["run"]

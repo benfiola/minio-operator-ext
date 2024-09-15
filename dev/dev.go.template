@@ -1,0 +1,39 @@
+package main
+
+import (
+	"context"
+	"log/slog"
+	"os"
+	"path/filepath"
+
+	operator "github.com/benfiola/minio-operator-ext/internal/operator"
+	"golang.org/x/sync/errgroup"
+)
+
+func runOperator() error {
+	l := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+	o, err := operator.New(&operator.Opts{
+		Logger:     l,
+		KubeConfig: filepath.Join("..", ".dev", "kube-config.yaml"),
+	})
+	if err != nil {
+		return err
+	}
+	return o.Run(context.Background())
+}
+
+func inner() error {
+	g, _ := errgroup.WithContext(context.Background())
+	g.Go(runOperator)
+	return g.Wait()
+}
+
+func main() {
+	err := inner()
+	if err != nil {
+		slog.Error(err.Error())
+		os.Exit(1)
+	}
+}

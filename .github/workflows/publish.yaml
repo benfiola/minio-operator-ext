@@ -18,10 +18,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: install python
-        uses: actions/setup-python@v5
+      - name: install go
+        uses: actions/setup-go@v5
         with:
-          python-version: "3.10"
+          go-version: "1.22.5"
       - name: download versionctl
         run: |
           curl -fsSL -o /usr/local/bin/versionctl "https://github.com/benfiola/versionctl/releases/latest/download/versionctl-linux-amd64"
@@ -44,15 +44,16 @@ jobs:
           echo "image=${image}" >> "${GITHUB_OUTPUT}"
           echo "latest_image=${latest_image}" >> "${GITHUB_OUTPUT}"
           echo "publish_latest=${publish_latest}" >> "${GITHUB_OUTPUT}"
-      - name: check project
+      - name: set version
         run: |
-          versionctl set "${{steps.facts.outputs.version}}" pyproject.toml
-          pip install --no-color --progress-bar=off --editable ".[dev]"
-          black --check .
+          echo "${{steps.facts.outputs.version}}" > internal/operator/version.txt
       - name: prepare docker
         run: |
           docker buildx create --platform linux/arm64,linux/amd64 --use
           docker login --username=benfiola --password "${{secrets.DOCKER_TOKEN}}"
+      - name: build image
+        run: |
+          docker buildx build --platform=linux/arm64,linux/amd64 --progress=plain .
       - name: publish image
         run: |
           docker buildx build --platform=linux/arm64,linux/amd64 --progress=plain --push --tag="${{steps.facts.outputs.image}}" .
