@@ -1,0 +1,22 @@
+helmGlobals:
+  chartHome: ../../../.dev/kustomize-charts
+
+helmCharts:
+  - name: tenant
+    releaseName: tenant
+    repo: https://operator.min.io
+    version: 6.0.3
+    valuesInline:
+      tenant:
+        configSecret:
+          name: tenant-configuration-env
+        configuration:
+          name: tenant-configuration-env
+        exposeServices:
+          minio: true
+        name: tenant
+        pools:
+          - name: default
+            servers: 1
+            size: 100Mi
+            volumesPerServer: 1

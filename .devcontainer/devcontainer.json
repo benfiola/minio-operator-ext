@@ -1,15 +1,11 @@
 {
-  "build": {
-    "dockerfile": "Dockerfile"
-  },
   "customizations": {
     "vscode": {
       "extensions": [
         "esbenp.prettier-vscode",
+        "golang.go",
         "rohit-gohri.format-code-action",
-        "ms-python.black-formatter",
-        "ms-python.isort",
-        "ms-python.python"
+        "ms-vscode.makefile-tools"
       ],
       "settings": {
         "editor.codeActionsOnSave": [
@@ -17,34 +13,42 @@
           "source.formatDocument"
         ],
         "editor.defaultFormatter": "esbenp.prettier-vscode",
-        "isort.args": ["--profile", "black", "--pro.ject", "minio_operator_ext"],
+        "go.testFlags": ["-v", "-count=1"],
+        "go.testTimeout": "300s",
         "launch": {
           "version": "0.2.0",
           "configurations": [
             {
-              "name": "Python: dev.py",
-              "type": "debugpy",
+              "name": "${workspaceFolder}/dev/dev.go",
+              "type": "go",
               "request": "launch",
-              "program": "${workspaceFolder}/dev.py",
-              "cwd": "${workspaceFolder}",
-              "purpose": ["debug-test"],
-              "console": "integratedTerminal",
-              "justMyCode": false
+              "mode": "auto",
+              "program": "${workspaceFolder}/dev/dev.go"
             }
           ]
         },
-        "python.defaultInterpreterPath": "/venv/bin/python3",
-        "[python]": {
-          "editor.defaultFormatter": "ms-python.black-formatter"
+        "[go]": {
+          "editor.defaultFormatter": "golang.go"
         }
       }
     }
   },
   "features": {
+    // "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
     "ghcr.io/devcontainers/features/docker-in-docker:2": {},
-    "ghcr.io/devcontainers/features/python:1": {
-      "version": "3.10.2"
+    "ghcr.io/devcontainers/features/go": {
+      "version": "1.22.5"
+    },
+    "ghcr.io/rocker-org/devcontainer-features/apt-packages:1": {
+      "packages": ["curl", "git", "iproute2", "sudo", "vim"]
     }
   },
-  "postCreateCommand": ".devcontainer/post-create.sh"
+  "image": "ubuntu:latest",
+  "postCreateCommand": ".devcontainer/post-create.sh",
+  "remoteEnv": {
+    "MC_DISABLE_PAGER": "1",
+    "MC_INSECURE": "1",
+    "KUBECONFIG": "/workspaces/minio-operator-ext/.dev/kube-config.yaml",
+    "PATH": "/workspaces/minio-operator-ext/.dev:${containerEnv:PATH}"
+  }
 }

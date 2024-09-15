@@ -1,0 +1,8 @@
+helmGlobals:
+  chartHome: ../../../.dev/kustomize-charts
+
+helmCharts:
+  - name: operator
+    releaseName: tenant
+    repo: https://operator.min.io
+    version: 6.0.3

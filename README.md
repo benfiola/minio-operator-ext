@@ -2,7 +2,7 @@
 
 The [MinIO Operator](https://github.com/minio/operator) currently is capable of deploying MinIO tenants - but does not expose any mechanisms by which one could declaratively manage resources within a MinIO tenant.
 
-This repo extends the MinIO Operator (i.e., minio-operator-ext(ension)) - providing an additional [operator](./minio_operator_ext/operator.py) and [CRDs](./manifests/crds.yaml) that allow one to declaratiely manage users, buckets, policies and policy bindings.
+This repo extends the MinIO Operator (i.e., minio-operator-ext(ension)) - providing an additional [operator](./internal/operator/operator.go) and [CRDs](./manifests/crds.yaml) that allow one to declaratiely manage users, buckets, policies and policy bindings.
 
 ## Resources
 
@@ -24,6 +24,8 @@ Installation is a two-step process:
 - Deploy the [CRDs](./manifests/crds.yaml)
 - Deploy the operator ([example](./manifests/example-deployment.yaml))
 
+NOTE: While the example uses _latest_, it's recommended to pin your CRDs and operator image to a specific version tag for consistency.
+
 ### Image
 
 The operator is hosted on docker hub and can be found at [docker.io/benfiola/minio-operator-ext](https://hub.docker.com/r/benfiola/minio-operator-ext).
@@ -39,24 +41,29 @@ The following arguments/environment variables configure the operator:
 
 The operator requires the a service account with the following RBAC settings:
 
-| Resource               | Verbs                   | Why                                                                                                                 |
-| ---------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| minio.min.io/v2/Tenant | Get, Watch, List, Patch | Used to discover MinIO tenants                                                                                      |
-| v1/Event               | Create                  | Used to publish events whenever activity is performed                                                               |
-| v1/ConfigMap           | Get                     | Used to obtain the CA bundle used to generate a MinIO tenant's TLS certificates (- for HTTP client cert validation) |
-| v1/Secret              | Get                     | Used to fetch a MinIO tenant's configuration (which is stored as a secret)                                          |
-| v1/Services            | Get                     | Used to determine a MinIO tenant's internal endpoint                                                                |
+| Resource                         | Verbs                   | Why                                                                                                                 |
+| -------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| minio.min.io/v2/Tenant           | Get                     | Used to discover MinIO tenants                                                                                      |
+| v1/ConfigMap                     | Get                     | Used to obtain the CA bundle used to generate a MinIO tenant's TLS certificates (- for HTTP client cert validation) |
+| v1/Secret                        | Get                     | Used to fetch a MinIO tenant's configuration (which is stored as a secret)                                          |
+| v1/Services                      | Get                     | Used to determine a MinIO tenant's internal endpoint                                                                |
+| bfiola.dev/v1/MinioBucket        | Get, Watch, List, Patch | Required for the operator to manage minio bucket resources                                                          |
+| bfiola.dev/v1/MinioGroup         | Get, Watch, List, Patch | Required for the operator to manage minio group resources                                                           |
+| bfiola.dev/v1/MinioGroupBinding  | Get, Watch, List, Patch | Required for the operator to manage minio group membership                                                          |
+| bfiola.dev/v1/MinioPolicy        | Get, Watch, List, Patch | Required for the operator to manage minio policies                                                                  |
+| bfiola.dev/v1/MinioPolicyBinding | Get, Watch, List, Patch | Required for the operator to manage minio policy attachments                                                        |
+| bfiola.dev/v1/MinioUser          | Get, Watch, List, Patch | Required for the operator to manage minio user resources                                                            |
 
 ## Limitations
 
-Not all minio resource properties can be updated. These properties are treated as immutable. Attempts to modify immutable properties will be ignored and warning events will be logged to the resource in question.
+Some minio resource properties are ignored on update. This is done by design to prevent accidental, destructive changes.
 
-Some examples of immutable properties:
-
-- Bucket names
-- Group names
-- User access keys
-- Policy names
+| Property                 | Why                                                          |
+| ------------------------ | ------------------------------------------------------------ |
+| MinioBucket.Spec.Name    | Can break MinioPolicy resources, delete data                 |
+| MinioGroup.Spec.Name     | Can break MinioGroupBinding and MinioPolicyBinding resources |
+| MinioUser.Spec.AccessKey | Can break MinioGroupBinding and MinioPolicyBinding resources |
+| MinioPolicy.Spec.Name    | Can break MinioPolicyBinding resources                       |
 
 ## Development
 
@@ -64,26 +71,49 @@ I personally use [vscode](https://code.visualstudio.com/) as an IDE. For a consi
 
 NOTE: Helper scripts are written under the assumption that they're being executed within a dev container.
 
-### Creating a development environment
+### Installing tools
+
+From the project root, run the following to install useful tools. Currently, this includes:
+
+- helm
+- kubectl
+- lb-hosts-manager
+- mc
+- minikube
+
+```shell
+cd /workspaces/minio-operator-ext
+make install-tools
+```
+
+### Creating a development cluster
 
 From the project root, run the following to create a development cluster to test the operator with:
 
 ```shell
 cd /workspaces/minio-operator-ext
-./dev/create-cluster.sh
+make dev
 ```
 
 This will:
 
-- Delete an existing dev cluster if one exists
-- Create a new dev cluster
+- Create a new minikube cluster
 - Install the minio operator
 - Create a minio tenant
 - Deploy an ldap server
 - Apply the [custom resources](./manifests/crds.yaml)
 - Apply the [example resources](./manifests/example-resources.yaml)
-- Waits for minio tenant to finish deploying
-- Forward all services locally under their cluster-local DNS names
+- Wait for minio tenant to be accessible
+- Forward minio tenant and ldap services to be available locally under their cluster-local DNS names
+
+### Run end-to-end tests
+
+With a development cluster deployed, you can run end-to-end operator tests to confirm the operator functions as expected:
+
+```shell
+cd /workspaces/minio-operator-ext
+make e2e-test
+```
 
 ### Testing LDAP identities
 
@@ -91,15 +121,13 @@ After creating a local development cluster, you can configure minio to use the d
 
 ```shell
 cd /workspaces/minio-operator-ext
-./dev/use-ldap.sh
+make set-minio-identity-provider-ldap
 ```
 
 NOTE: With an identity provider configured, attempts to operate on builtin identities will fail.
 
-### Creating a launch script
+### Creating a debug script
 
-Copy the [dev.template.py](./dev.template.py) script to `dev.py`, then run it to start the operator against the local development environment.
+Copy the [./dev/dev.go.template](./dev/dev.go.template) script to `./dev/dev.go`, then run it to start the operator. `./dev/dev.go` is ignored by git and can be modified as needed to help facilitate local development.
 
-If placed in the top-level directory, `dev.py` is gitignored and you can change this file as needed without worrying about committing it to git.
-
-Additionally, the devcontainer is configured with vscode launch configurations that point to a top-level `dev.py` file. You should be able to launch (and attach a debugger to) the operator by launching it natively through vscode.
+Additionally, the devcontainer is configured with a vscode launch configuration that points to `./dev/dev.go`. You should be able to launch (and attach a debugger to) the webhook via this vscode launch configuration.
