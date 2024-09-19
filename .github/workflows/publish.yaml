@@ -46,10 +46,10 @@ jobs:
           echo "publish_latest=${publish_latest}" >> "${GITHUB_OUTPUT}"
       - name: test
         run: |
-          go test ./internal/provider
+          go test ./internal/operator
       - name: set version
         run: |
-          echo "${{steps.facts.outputs.version}}" > internal/provider/version.txt
+          echo "${{steps.facts.outputs.version}}" > internal/operator/version.txt
       - name: prepare docker
         run: |
           docker buildx create --platform linux/arm64,linux/amd64 --use

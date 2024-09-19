@@ -2,7 +2,7 @@
   "containerEnv": {
     "MC_DISABLE_PAGER": "1",
     "MC_INSECURE": "1"
-  }
+  },
   "customizations": {
     "vscode": {
       "extensions": [
