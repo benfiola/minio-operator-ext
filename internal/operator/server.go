@@ -10,18 +10,23 @@ import (
 	slogecho "github.com/samber/slog-echo"
 )
 
+type Server interface {
+	Run() error
+}
+
 type server struct {
 	echo     *echo.Echo
 	host     string
 	logger   *slog.Logger
-	operator *operator
+	operator Operator
 	port     uint
 }
 
 type ServerOpts struct {
-	Host   string
-	Logger *slog.Logger
-	Port   uint
+	Host     string
+	Logger   *slog.Logger
+	Operator Operator
+	Port     uint
 }
 
 func NewServer(o *ServerOpts) (*server, error) {
@@ -44,7 +49,7 @@ func NewServer(o *ServerOpts) (*server, error) {
 		echo:     e,
 		host:     h,
 		logger:   l,
-		operator: nil,
+		operator: o.Operator,
 		port:     p,
 	}
 

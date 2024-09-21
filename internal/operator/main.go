@@ -9,12 +9,13 @@ import (
 )
 
 type main struct {
-	Operator *operator
-	Server   *server
+	Operator Operator
+	Server   Server
 }
 
 type Opts struct {
 	Logger     *slog.Logger
+	KubeConfig string
 	ServerHost string
 	ServerPort uint
 }
@@ -26,14 +27,16 @@ func New(o *Opts) (*main, error) {
 	}
 
 	op, err := NewOperator(&OperatorOpts{
-		Logger: l.With("name", "operator"),
+		Logger:     l.With("name", "operator"),
+		KubeConfig: o.KubeConfig,
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	s, err := NewServer(&ServerOpts{
-		Logger: l.With("name", "server"),
+		Logger:   l.With("name", "server"),
+		Operator: op,
 	})
 	if err != nil {
 		return nil, err
