@@ -17,13 +17,24 @@ type MinioPolicy struct {
 	Status MinioPolicyStatus `json:"status,omitempty"`
 }
 
+// MinioPolicyStatement defines a single statement within a MinioPolicy
+type MinioPolicyStatement struct {
+	Action   []string `json:"action"`
+	Effect   string   `json:"effect"`
+	Resource []string `json:"resource"`
+}
+
 // MinioPolicySpec defines the desired state of MinioPolicy
 type MinioPolicySpec struct {
-	TenantRef ResourceRef `json:"tenantRef"`
+	Name      string                 `json:"name"`
+	Statement []MinioPolicyStatement `json:"statement"`
+	TenantRef ResourceRef            `json:"tenantRef"`
+	Version   string                 `json:"version"`
 }
 
 // MinioPolicyStatus defines the current state of MinioPolicy
 type MinioPolicyStatus struct {
+	Name      *string      `json:"name,omitempty"`
 	TenantRef *ResourceRef `json:"tenantRef,omitempty"`
 }
 

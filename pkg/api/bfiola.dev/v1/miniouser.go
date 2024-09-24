@@ -19,11 +19,15 @@ type MinioUser struct {
 
 // MinioUserSpec defines the desired state of MinioUser
 type MinioUserSpec struct {
-	TenantRef ResourceRef `json:"tenantRef"`
+	AccessKey    string         `json:"accessKey"`
+	TenantRef    ResourceRef    `json:"tenantRef"`
+	SecretKeyRef ResourceKeyRef `json:"secretKeyRef"`
 }
 
 // MinioUserStatus defines the current state of MinioUser
 type MinioUserStatus struct {
+	AccessKey *string      `json:"accessKey,omitempty"`
+	TenantRef *ResourceRef `json:"resourceRef,omitempty"`
 }
 
 // +k8s:deepcopy-gen=true

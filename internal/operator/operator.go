@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -665,7 +666,7 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 	l := r.logger.WithValues("resource", req.NamespacedName.String())
 	l.Info("reconcile")
 
-	p := &v1.MinioGroup{}
+	p := &v1.MinioPolicy{}
 	err := r.Get(ctx, req.NamespacedName, p)
 	if err != nil {
 		return reconcile.Result{}, client.IgnoreNotFound(err)
@@ -673,6 +674,28 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 
 	if !p.ObjectMeta.DeletionTimestamp.IsZero() {
 		l.Info("marked for deletion")
+
+		if p.Status.TenantRef != nil && p.Status.Name != nil {
+			l.Info("delete policy (status set)")
+
+			l.Info("get tenant client")
+			mtci, err := getMinioTenantClientInfo(ctx, r, *p.Status.TenantRef)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+			mtac, err := mtci.GetAdminClient(ctx)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+
+			l.Info("delete minio policy")
+			err = mtac.DeletePolicy(ctx, *p.Status.Name)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+
+			return reconcile.Result{}, nil
+		}
 
 		l.Info("clear finalizer")
 		controllerutil.RemoveFinalizer(p, finalizer)
@@ -688,6 +711,70 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 		l.Info("add finalizer")
 		controllerutil.AddFinalizer(p, finalizer)
 		err = r.Update(ctx, p)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{}, nil
+	}
+
+	if p.Status.TenantRef != nil && p.Status.Name != nil {
+		l.Info("check for policy change")
+
+		l.Info("get tenant admin client")
+		mtci, err := getMinioTenantClientInfo(ctx, r, *p.Status.TenantRef)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		mtac, err := mtci.GetAdminClient(ctx)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		l.Info("get policy")
+		mp, err := mtac.InfoCannedPolicyV2(ctx, *p.Status.Name)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		if mp != nil {
+			return reconcile.Result{}, fmt.Errorf("unimplemented")
+		}
+
+		return reconcile.Result{}, fmt.Errorf("unimplemented")
+	}
+
+	if p.Status.TenantRef == nil && p.Status.Name == nil {
+		l.Info("create policy (status unset)")
+
+		l.Info("get tenant admin client")
+		mtci, err := getMinioTenantClientInfo(ctx, r, *p.Status.TenantRef)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		mtac, err := mtci.GetAdminClient(ctx)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		l.Info("marshal policy to json")
+		pd, err := json.Marshal(map[string]any{
+			"statement": p.Spec.Statement,
+			"version":   p.Spec.Version,
+		})
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		l.Info("create minio policy")
+		err = mtac.AddCannedPolicy(ctx, p.Spec.Name, pd)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		l.Info("set status")
+		p.Status.Name = &p.Spec.Name
+		p.Status.TenantRef = &p.Spec.TenantRef
+		err = r.Status().Update(ctx, p)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -763,7 +850,7 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 	l := r.logger.WithValues("resource", req.NamespacedName.String())
 	l.Info("reconcile")
 
-	u := &v1.MinioGroup{}
+	u := &v1.MinioUser{}
 	err := r.Get(ctx, req.NamespacedName, u)
 	if err != nil {
 		return reconcile.Result{}, client.IgnoreNotFound(err)
@@ -771,6 +858,36 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 
 	if !u.ObjectMeta.DeletionTimestamp.IsZero() {
 		l.Info("marked for deletion")
+
+		if u.Status.TenantRef != nil && u.Status.AccessKey != nil {
+			l.Info("delete user (status set)")
+
+			l.Info("get tenant admin client")
+			mtci, err := getMinioTenantClientInfo(ctx, r, *u.Status.TenantRef)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+			mtac, err := mtci.GetAdminClient(ctx)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+
+			l.Info("delete minio user")
+			err = mtac.RemoveUser(ctx, *u.Status.AccessKey)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+
+			l.Info("clear status")
+			u.Status.AccessKey = nil
+			u.Status.TenantRef = nil
+			err = r.Status().Update(ctx, u)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+
+			return reconcile.Result{}, nil
+		}
 
 		l.Info("clear finalizer")
 		controllerutil.RemoveFinalizer(u, finalizer)
@@ -786,6 +903,83 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 		l.Info("add finalizer")
 		controllerutil.AddFinalizer(u, finalizer)
 		err = r.Update(ctx, u)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{}, nil
+	}
+
+	if u.Status.AccessKey != nil && u.Status.TenantRef != nil {
+		l.Info("check for user change")
+
+		l.Info("get tenant admin client")
+		mtci, err := getMinioTenantClientInfo(ctx, r, *u.Status.TenantRef)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		mtac, err := mtci.GetAdminClient(ctx)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		l.Info("get user")
+		ui, err := mtac.GetUserInfo(ctx, *u.Status.AccessKey)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		l.Info("get secret from secret key ref")
+		usrr := u.Spec.SecretKeyRef.SetDefaultNamespace(req.Namespace)
+		us := &corev1.Secret{}
+		err = r.Get(ctx, types.NamespacedName{Name: usrr.Name, Namespace: usrr.Namespace}, us)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		usk := string(us.Data[u.Spec.SecretKeyRef.Key])
+
+		if ui.SecretKey != usk {
+			l.Info("update user (secret key change)")
+			err = mtac.SetUserReq(ctx, u.Spec.AccessKey, madmin.AddOrUpdateUserReq{SecretKey: usk})
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+
+			return reconcile.Result{}, nil
+		}
+	}
+	if u.Status.AccessKey == nil && u.Status.TenantRef == nil {
+		l.Info("create user (status unset)")
+
+		l.Info("get tenant admin client")
+		mtci, err := getMinioTenantClientInfo(ctx, r, u.Spec.TenantRef)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		mtac, err := mtci.GetAdminClient(ctx)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		l.Info("get secret from secret key ref")
+		usrr := u.Spec.SecretKeyRef.SetDefaultNamespace(req.Namespace)
+		us := &corev1.Secret{}
+		err = r.Get(ctx, types.NamespacedName{Name: usrr.Name, Namespace: usrr.Namespace}, us)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		usk := string(us.Data[u.Spec.SecretKeyRef.Key])
+
+		l.Info("create minio user")
+		err = mtac.AddUser(ctx, u.Spec.AccessKey, usk)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		l.Info("set status")
+		u.Status.AccessKey = &u.Spec.AccessKey
+		u.Status.TenantRef = &u.Spec.TenantRef
+		err = r.Status().Update(ctx, u)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
