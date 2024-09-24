@@ -22,7 +22,7 @@ type MinioGroupSpec struct {
 	TenantRef ResourceRef `json:"tenantRef"`
 }
 
-// MinioGroupStatus defines the desired state of MinioGroup
+// MinioGroupStatus defines the current state of MinioGroup
 type MinioGroupStatus struct {
 }
 

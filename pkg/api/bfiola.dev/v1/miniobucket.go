@@ -25,8 +25,10 @@ type MinioBucketSpec struct {
 	TenantRef ResourceRef `json:"tenantRef"`
 }
 
-// MinioBucketStatus defines the desired state of MinioBucket
+// MinioBucketStatus defines the current state of MinioBucket
 type MinioBucketStatus struct {
+	Name      *string      `json:"name,omitempty"`
+	TenantRef *ResourceRef `json:"tenantRef,omitempty"`
 }
 
 // +k8s:deepcopy-gen=true

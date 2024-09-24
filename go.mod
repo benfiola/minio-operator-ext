@@ -3,6 +3,7 @@ module github.com/benfiola/minio-operator-ext
 go 1.22.5
 
 require (
+	github.com/go-logr/logr v1.4.2
 	github.com/hashicorp/go-envparse v0.1.0
 	github.com/labstack/echo/v4 v4.12.0
 	github.com/minio/madmin-go/v3 v3.0.57
@@ -30,7 +31,6 @@ require (
 	github.com/fatih/color v1.17.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
-	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/go-openapi/jsonpointer v0.21.0 // indirect
 	github.com/go-openapi/jsonreference v0.21.0 // indirect

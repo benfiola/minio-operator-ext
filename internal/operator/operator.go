@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -84,27 +85,27 @@ func NewOperator(o *OperatorOpts) (*operator, error) {
 		manager: m,
 	}
 
-	err = builder.ControllerManagedBy(m).For(&v1.MinioBucket{}).Complete(reconcile.Func(op.reconcileMinioBucket))
+	err = (&minioBucketReconciler{}).register(m)
 	if err != nil {
 		return nil, err
 	}
-	err = builder.ControllerManagedBy(m).For(&v1.MinioGroup{}).Complete(reconcile.Func(op.reconcileMinioGroup))
+	err = (&minioGroupReconciler{}).register(m)
 	if err != nil {
 		return nil, err
 	}
-	err = builder.ControllerManagedBy(m).For(&v1.MinioGroupBinding{}).Complete(reconcile.Func(op.reconcileMinioGroupBinding))
+	err = (&minioGroupBindingReconciler{}).register(m)
 	if err != nil {
 		return nil, err
 	}
-	err = builder.ControllerManagedBy(m).For(&v1.MinioPolicy{}).Complete(reconcile.Func(op.reconcileMinioPolicy))
+	err = (&minioPolicyReconciler{}).register(m)
 	if err != nil {
 		return nil, err
 	}
-	err = builder.ControllerManagedBy(m).For(&v1.MinioPolicyBinding{}).Complete(reconcile.Func(op.reconcileMinioPolicyBinding))
+	err = (&minioPolicyBindingReconciler{}).register(m)
 	if err != nil {
 		return nil, err
 	}
-	err = builder.ControllerManagedBy(m).For(&v1.MinioUser{}).Complete(reconcile.Func(op.reconcileMinioUser))
+	err = (&minioUserReconciler{}).register(m)
 	if err != nil {
 		return nil, err
 	}
@@ -121,20 +122,18 @@ func (o *operator) Run() error {
 	return o.manager.Start(context.Background())
 }
 
-type tenantClientInfo struct {
+type minioTenantClientInfo struct {
 	AccessKey string
-	CaBundle  []byte
+	CaBundle  *x509.CertPool
 	Endpoint  string
 	SecretKey string
 	Secure    bool
 }
 
-func (o *operator) getMinioTenantClientInfo(ctx context.Context, rr v1.ResourceRef) (*tenantClientInfo, error) {
+func getMinioTenantClientInfo(ctx context.Context, c client.Client, rr v1.ResourceRef) (*minioTenantClientInfo, error) {
 	if rr.Namespace == "" {
 		return nil, fmt.Errorf("namespace empty")
 	}
-
-	c := o.manager.GetClient()
 
 	// get tenant
 	t := &miniov2.Tenant{}
@@ -210,35 +209,31 @@ func (o *operator) getMinioTenantClientInfo(ctx context.Context, rr v1.ResourceR
 		return nil, fmt.Errorf("kube root ca for %s not found", rr.Namespace)
 	}
 
-	return &tenantClientInfo{
+	// create cert pool with ca bundle
+	cbp := x509.NewCertPool()
+	cbb, _ := pem.Decode([]byte(cb))
+	cbc, err := x509.ParseCertificate(cbb.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	cbp.AddCert(cbc)
+
+	return &minioTenantClientInfo{
 		AccessKey: ak,
-		CaBundle:  []byte(cb),
+		CaBundle:  cbp,
 		Endpoint:  e,
 		Secure:    s,
 		SecretKey: sk,
 	}, nil
 }
 
-func (o *operator) getMinioTenantClient(ctx context.Context, rr v1.ResourceRef) (*minioclient.Client, error) {
-	mtci, err := o.getMinioTenantClientInfo(ctx, rr)
-	if err != nil {
-		return nil, err
-	}
-
-	cp := x509.NewCertPool()
-	cpb, _ := pem.Decode(mtci.CaBundle)
-	c, err := x509.ParseCertificate(cpb.Bytes)
-	if err != nil {
-		return nil, err
-	}
-	cp.AddCert(c)
-
+func (mtci *minioTenantClientInfo) GetClient(ctx context.Context) (*minioclient.Client, error) {
 	mtc, err := minioclient.New(mtci.Endpoint, &minioclient.Options{
 		Creds:  miniocredentials.NewStaticV4(mtci.AccessKey, mtci.SecretKey, ""),
 		Secure: mtci.Secure,
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				RootCAs: cp,
+				RootCAs: mtci.CaBundle,
 			},
 		},
 	})
@@ -249,21 +244,11 @@ func (o *operator) getMinioTenantClient(ctx context.Context, rr v1.ResourceRef) 
 	return mtc, nil
 }
 
-func (o *operator) getMinioTenantAdminClient(ctx context.Context, rr v1.ResourceRef) (*madmin.AdminClient, error) {
-	mtci, err := o.getMinioTenantClientInfo(ctx, rr)
-	if err != nil {
-		return nil, err
-	}
-
-	cp := x509.NewCertPool()
-	cp.AddCert(&x509.Certificate{
-		Raw: []byte(mtci.CaBundle),
-	})
-
+func (mtci *minioTenantClientInfo) GetAdminClient(ctx context.Context, rr v1.ResourceRef) (*madmin.AdminClient, error) {
 	mtac, err := madmin.New(mtci.Endpoint, mtci.AccessKey, mtci.SecretKey, mtci.Secure)
 	mtac.SetCustomTransport(&http.Transport{
 		TLSClientConfig: &tls.Config{
-			ClientCAs: cp,
+			RootCAs: mtci.CaBundle,
 		},
 	})
 	if err != nil {
@@ -273,85 +258,222 @@ func (o *operator) getMinioTenantAdminClient(ctx context.Context, rr v1.Resource
 	return mtac, nil
 }
 
-func (o *operator) reconcileMinioBucket(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-	o.logger.Info("bucket reconciliation")
+type minioBucketReconciler struct {
+	client.Client
+	logger logr.Logger
+}
 
-	c := o.manager.GetClient()
+func (r *minioBucketReconciler) register(m manager.Manager) error {
+	r.Client = m.GetClient()
+	ctrl, err := builder.ControllerManagedBy(m).For(&v1.MinioBucket{}).Build(r)
+	r.logger = ctrl.GetLogger()
+	return err
+}
 
-	// get bucket
+func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
+	l := r.logger.WithValues("resource", req.NamespacedName.String())
+	l.Info("reconcile")
+
 	b := &v1.MinioBucket{}
-	err := c.Get(ctx, req.NamespacedName, b)
+	err := r.Get(ctx, req.NamespacedName, b)
 	if err != nil {
-		return reconcile.Result{}, err
+		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// ensure ref has namespace
-	rr := b.Spec.TenantRef.SetDefaultNamespace(req.Namespace)
-
-	// get client
-	mtc, err := o.getMinioTenantClient(ctx, rr)
-	if err != nil {
-		return reconcile.Result{}, err
-	}
-
-	hf := controllerutil.ContainsFinalizer(b, finalizer)
-	if hf {
-		// bucket was previously created
-		if b.ObjectMeta.DeletionTimestamp.IsZero() {
-			// handle resource deletion
-			err := mtc.RemoveBucket(ctx, b.Spec.Name)
-			if err != nil {
-				return reconcile.Result{}, err
-			}
-
-			controllerutil.RemoveFinalizer(b, finalizer)
-			err = c.Update(ctx, b)
-			if err != nil {
-				return reconcile.Result{}, err
-			}
-
-			return reconcile.Result{}, nil
+	deleteBucket := func() error {
+		l.Info("get tenant client")
+		mtci, err := getMinioTenantClientInfo(ctx, r, *b.Status.TenantRef)
+		if err != nil {
+			return err
 		}
-		// handle updates
+		mtc, err := mtci.GetClient(ctx)
+		if err != nil {
+			return err
+		}
+
+		l.Info("delete minio bucket")
+		err = mtc.RemoveBucket(ctx, *b.Status.Name)
+		if err != nil {
+			mcerr, ok := err.(minioclient.ErrorResponse)
+			if !ok {
+				return err
+			}
+			if mcerr.Code != "NoSuchBucket" {
+				return err
+			}
+		}
+
+		l.Info("clear status")
+		b.Status.Name = nil
+		b.Status.TenantRef = nil
+		err = r.Status().Update(ctx, b)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	if !b.ObjectMeta.DeletionTimestamp.IsZero() {
+		l.Info("marked for deletion")
+		if b.Status.TenantRef != nil && b.Status.Name != nil {
+			l.Info("delete bucket (status set)")
+			err := deleteBucket()
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+		}
+
+		l.Info("clear finalizer")
+		controllerutil.RemoveFinalizer(b, finalizer)
+		err = r.Update(ctx, b)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
 		return reconcile.Result{}, nil
 	}
 
-	// handle creation
-	err = mtc.MakeBucket(ctx, b.Spec.Name, minioclient.MakeBucketOptions{})
-	if err != nil {
-		return reconcile.Result{}, err
+	if !controllerutil.ContainsFinalizer(b, finalizer) {
+		l.Info("add finalizer")
+		controllerutil.AddFinalizer(b, finalizer)
+		err = r.Update(ctx, b)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{}, nil
 	}
 
-	controllerutil.AddFinalizer(b, finalizer)
-	err = c.Update(ctx, b)
-	if err != nil {
-		return reconcile.Result{}, err
+	if (b.Status.Name != nil && b.Status.TenantRef != nil) && (*b.Status.Name != b.Spec.Name || *b.Status.TenantRef != b.Spec.TenantRef) {
+		l.Info("re-create bucket (status and spec differ)")
+		err := deleteBucket()
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{}, nil
+	}
+
+	if b.Status.Name == nil && b.Status.TenantRef == nil {
+		l.Info("create bucket (status unset)")
+
+		l.Info("get tenant client")
+		mtci, err := getMinioTenantClientInfo(ctx, r, b.Spec.TenantRef)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		mtc, err := mtci.GetClient(ctx)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		l.Info("create minio bucket")
+		err = mtc.MakeBucket(ctx, b.Spec.Name, minioclient.MakeBucketOptions{})
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		l.Info("set status")
+		b.Status.Name = &b.Spec.Name
+		b.Status.TenantRef = &b.Spec.TenantRef
+		err = r.Status().Update(ctx, b)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{}, nil
 	}
 
 	return reconcile.Result{}, nil
 }
 
-func (o *operator) reconcileMinioGroup(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-	o.logger.Info("group reconciliation")
+type minioGroupReconciler struct {
+	client.Client
+	logger logr.Logger
+}
+
+func (r *minioGroupReconciler) register(m manager.Manager) error {
+	r.Client = m.GetClient()
+	ctrl, err := builder.ControllerManagedBy(m).For(&v1.MinioGroup{}).Build(r)
+	r.logger = ctrl.GetLogger()
+	return err
+}
+
+func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
+	l := r.logger.WithValues("resource", req.NamespacedName.String())
+	l.Info("reconcile")
 	return reconcile.Result{}, nil
 }
 
-func (o *operator) reconcileMinioGroupBinding(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-	o.logger.Info("group binding reconciliation")
+type minioGroupBindingReconciler struct {
+	client.Client
+	logger logr.Logger
+}
+
+func (r *minioGroupBindingReconciler) register(m manager.Manager) error {
+	r.Client = m.GetClient()
+	ctrl, err := builder.ControllerManagedBy(m).For(&v1.MinioGroupBinding{}).Build(r)
+	r.logger = ctrl.GetLogger()
+	return err
+}
+
+func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
+	l := r.logger.WithValues("resource", req.NamespacedName.String())
+	l.Info("reconcile")
 	return reconcile.Result{}, nil
 }
 
-func (o *operator) reconcileMinioPolicy(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-	o.logger.Info("policy reconciliation")
+type minioPolicyReconciler struct {
+	client.Client
+	logger logr.Logger
+}
+
+func (r *minioPolicyReconciler) register(m manager.Manager) error {
+	r.Client = m.GetClient()
+	ctrl, err := builder.ControllerManagedBy(m).For(&v1.MinioPolicy{}).Build(r)
+	r.logger = ctrl.GetLogger()
+	return err
+}
+
+func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
+	l := r.logger.WithValues("resource", req.NamespacedName.String())
+	l.Info("reconcile")
 	return reconcile.Result{}, nil
 }
 
-func (o *operator) reconcileMinioPolicyBinding(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-	o.logger.Info("policy reconciliation")
+type minioPolicyBindingReconciler struct {
+	client.Client
+	logger logr.Logger
+}
+
+func (r *minioPolicyBindingReconciler) register(m manager.Manager) error {
+	r.Client = m.GetClient()
+	ctrl, err := builder.ControllerManagedBy(m).For(&v1.MinioPolicyBinding{}).Build(r)
+	r.logger = ctrl.GetLogger()
+	return err
+}
+
+func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
+	l := r.logger.WithValues("resource", req.NamespacedName.String())
+	l.Info("reconcile")
 	return reconcile.Result{}, nil
 }
 
-func (o *operator) reconcileMinioUser(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-	o.logger.Info("user reconciliation")
+type minioUserReconciler struct {
+	client.Client
+	logger logr.Logger
+}
+
+func (r *minioUserReconciler) register(m manager.Manager) error {
+	r.Client = m.GetClient()
+	ctrl, err := builder.ControllerManagedBy(m).For(&v1.MinioUser{}).Build(r)
+	r.logger = ctrl.GetLogger()
+	return err
+}
+
+func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
+	l := r.logger.WithValues("resource", req.NamespacedName.String())
+	l.Info("reconcile")
 	return reconcile.Result{}, nil
 }

@@ -22,7 +22,7 @@ type MinioPolicyBindingSpec struct {
 	TenantRef ResourceRef `json:"tenantRef"`
 }
 
-// MinioPolicyBindingStatus defines the desired state of MinioPolicyBinding
+// MinioPolicyBindingStatus defines the current state of MinioPolicyBinding
 type MinioPolicyBindingStatus struct {
 }
 
