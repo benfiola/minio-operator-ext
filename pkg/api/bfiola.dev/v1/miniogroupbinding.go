@@ -19,6 +19,7 @@ type MinioGroupBinding struct {
 
 // MinioGroupBindingSpec defines the desired state of MinioGroupBinding
 type MinioGroupBindingSpec struct {
+	TenantRef *ResourceRef `json:"tenantRef,omitempty"`
 }
 
 // MinioGroupBindingStatus defines the current state of MinioGroupBinding

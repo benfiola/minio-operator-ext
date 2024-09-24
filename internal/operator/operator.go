@@ -403,6 +403,37 @@ func (r *minioGroupReconciler) register(m manager.Manager) error {
 func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	l := r.logger.WithValues("resource", req.NamespacedName.String())
 	l.Info("reconcile")
+
+	g := &v1.MinioGroup{}
+	err := r.Get(ctx, req.NamespacedName, g)
+	if err != nil {
+		return reconcile.Result{}, client.IgnoreNotFound(err)
+	}
+
+	if !g.ObjectMeta.DeletionTimestamp.IsZero() {
+		l.Info("marked for deletion")
+
+		l.Info("clear finalizer")
+		controllerutil.RemoveFinalizer(g, finalizer)
+		err = r.Update(ctx, g)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{}, nil
+	}
+
+	if !controllerutil.ContainsFinalizer(g, finalizer) {
+		l.Info("add finalizer")
+		controllerutil.AddFinalizer(g, finalizer)
+		err = r.Update(ctx, g)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{}, nil
+	}
+
 	return reconcile.Result{}, nil
 }
 
@@ -421,6 +452,37 @@ func (r *minioGroupBindingReconciler) register(m manager.Manager) error {
 func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	l := r.logger.WithValues("resource", req.NamespacedName.String())
 	l.Info("reconcile")
+
+	gb := &v1.MinioGroup{}
+	err := r.Get(ctx, req.NamespacedName, gb)
+	if err != nil {
+		return reconcile.Result{}, client.IgnoreNotFound(err)
+	}
+
+	if !gb.ObjectMeta.DeletionTimestamp.IsZero() {
+		l.Info("marked for deletion")
+
+		l.Info("clear finalizer")
+		controllerutil.RemoveFinalizer(gb, finalizer)
+		err = r.Update(ctx, gb)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{}, nil
+	}
+
+	if !controllerutil.ContainsFinalizer(gb, finalizer) {
+		l.Info("add finalizer")
+		controllerutil.AddFinalizer(gb, finalizer)
+		err = r.Update(ctx, gb)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{}, nil
+	}
+
 	return reconcile.Result{}, nil
 }
 
@@ -439,6 +501,37 @@ func (r *minioPolicyReconciler) register(m manager.Manager) error {
 func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	l := r.logger.WithValues("resource", req.NamespacedName.String())
 	l.Info("reconcile")
+
+	p := &v1.MinioGroup{}
+	err := r.Get(ctx, req.NamespacedName, p)
+	if err != nil {
+		return reconcile.Result{}, client.IgnoreNotFound(err)
+	}
+
+	if !p.ObjectMeta.DeletionTimestamp.IsZero() {
+		l.Info("marked for deletion")
+
+		l.Info("clear finalizer")
+		controllerutil.RemoveFinalizer(p, finalizer)
+		err = r.Update(ctx, p)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{}, nil
+	}
+
+	if !controllerutil.ContainsFinalizer(p, finalizer) {
+		l.Info("add finalizer")
+		controllerutil.AddFinalizer(p, finalizer)
+		err = r.Update(ctx, p)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{}, nil
+	}
+
 	return reconcile.Result{}, nil
 }
 
@@ -457,6 +550,37 @@ func (r *minioPolicyBindingReconciler) register(m manager.Manager) error {
 func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	l := r.logger.WithValues("resource", req.NamespacedName.String())
 	l.Info("reconcile")
+
+	pb := &v1.MinioGroup{}
+	err := r.Get(ctx, req.NamespacedName, pb)
+	if err != nil {
+		return reconcile.Result{}, client.IgnoreNotFound(err)
+	}
+
+	if !pb.ObjectMeta.DeletionTimestamp.IsZero() {
+		l.Info("marked for deletion")
+
+		l.Info("clear finalizer")
+		controllerutil.RemoveFinalizer(pb, finalizer)
+		err = r.Update(ctx, pb)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{}, nil
+	}
+
+	if !controllerutil.ContainsFinalizer(pb, finalizer) {
+		l.Info("add finalizer")
+		controllerutil.AddFinalizer(pb, finalizer)
+		err = r.Update(ctx, pb)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{}, nil
+	}
+
 	return reconcile.Result{}, nil
 }
 
@@ -475,5 +599,36 @@ func (r *minioUserReconciler) register(m manager.Manager) error {
 func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	l := r.logger.WithValues("resource", req.NamespacedName.String())
 	l.Info("reconcile")
+
+	u := &v1.MinioGroup{}
+	err := r.Get(ctx, req.NamespacedName, u)
+	if err != nil {
+		return reconcile.Result{}, client.IgnoreNotFound(err)
+	}
+
+	if !u.ObjectMeta.DeletionTimestamp.IsZero() {
+		l.Info("marked for deletion")
+
+		l.Info("clear finalizer")
+		controllerutil.RemoveFinalizer(u, finalizer)
+		err = r.Update(ctx, u)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{}, nil
+	}
+
+	if !controllerutil.ContainsFinalizer(u, finalizer) {
+		l.Info("add finalizer")
+		controllerutil.AddFinalizer(u, finalizer)
+		err = r.Update(ctx, u)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{}, nil
+	}
+
 	return reconcile.Result{}, nil
 }

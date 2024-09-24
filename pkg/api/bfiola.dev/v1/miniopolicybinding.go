@@ -24,6 +24,7 @@ type MinioPolicyBindingSpec struct {
 
 // MinioPolicyBindingStatus defines the current state of MinioPolicyBinding
 type MinioPolicyBindingStatus struct {
+	TenantRef *ResourceRef `json:"tenantRef,omitempty"`
 }
 
 // +k8s:deepcopy-gen=true
