@@ -282,11 +282,11 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 
 	if !b.ObjectMeta.DeletionTimestamp.IsZero() {
 		l.Info("marked for deletion")
-		if b.Status.TenantRef != nil && b.Status.Name != nil {
+		if b.Status.CurrentSpec != nil {
 			l.Info("delete bucket (status set)")
 
 			l.Info("get tenant client")
-			mtci, err := getMinioTenantClientInfo(ctx, r, *b.Status.TenantRef)
+			mtci, err := getMinioTenantClientInfo(ctx, r, b.Status.CurrentSpec.TenantRef)
 			if err != nil {
 				return reconcile.Result{}, err
 			}
@@ -296,7 +296,7 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 			}
 
 			l.Info("delete minio bucket")
-			err = mtc.RemoveBucket(ctx, *b.Status.Name)
+			err = mtc.RemoveBucket(ctx, b.Status.CurrentSpec.Name)
 			if err != nil {
 				mcerr, ok := err.(minioclient.ErrorResponse)
 				if !ok {
@@ -308,9 +308,8 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 			}
 
 			l.Info("clear status")
-			b.Status.Name = nil
-			b.Status.TenantRef = nil
-			err = r.Status().Update(ctx, b)
+			b.Status.CurrentSpec = nil
+			err = r.Update(ctx, b)
 			if err != nil {
 				return reconcile.Result{}, err
 			}
@@ -339,7 +338,7 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 		return reconcile.Result{}, nil
 	}
 
-	if b.Status.Name == nil && b.Status.TenantRef == nil {
+	if b.Status.CurrentSpec == nil {
 		l.Info("create bucket (status unset)")
 
 		l.Info("get tenant client")
@@ -359,9 +358,8 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 		}
 
 		l.Info("set status")
-		b.Status.Name = &b.Spec.Name
-		b.Status.TenantRef = &b.Spec.TenantRef
-		err = r.Status().Update(ctx, b)
+		b.Status.CurrentSpec = &b.Spec
+		err = r.Update(ctx, b)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -397,11 +395,11 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 	if !g.ObjectMeta.DeletionTimestamp.IsZero() {
 		l.Info("marked for deletion")
 
-		if g.Status.TenantRef != nil && g.Status.Name != nil {
+		if g.Status.CurrentSpec != nil {
 			l.Info("delete group (status set)")
 
 			l.Info("get tenant admin client")
-			mtci, err := getMinioTenantClientInfo(ctx, r, *g.Status.TenantRef)
+			mtci, err := getMinioTenantClientInfo(ctx, r, g.Status.CurrentSpec.TenantRef)
 			if err != nil {
 				return reconcile.Result{}, err
 			}
@@ -412,7 +410,7 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 
 			l.Info("delete minio group")
 			err = mtac.UpdateGroupMembers(ctx, madmin.GroupAddRemove{
-				Group:    *g.Status.Name,
+				Group:    g.Status.CurrentSpec.Name,
 				IsRemove: true,
 			})
 			if err != nil {
@@ -420,9 +418,8 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 			}
 
 			l.Info("clear status")
-			g.Status.Name = nil
-			g.Status.TenantRef = nil
-			err = r.Status().Update(ctx, g)
+			g.Status.CurrentSpec = nil
+			err = r.Update(ctx, g)
 			if err != nil {
 				return reconcile.Result{}, err
 			}
@@ -451,7 +448,7 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 		return reconcile.Result{}, nil
 	}
 
-	if g.Status.Name == nil && g.Status.TenantRef == nil {
+	if g.Status.CurrentSpec == nil {
 		l.Info("create group (status unset)")
 
 		l.Info("get tenant admin client")
@@ -474,9 +471,8 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 		}
 
 		l.Info("set status")
-		g.Status.Name = &g.Spec.Name
-		g.Status.TenantRef = &g.Spec.TenantRef
-		err = r.Status().Update(ctx, g)
+		g.Status.CurrentSpec = &g.Spec
+		err = r.Update(ctx, g)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -511,7 +507,7 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 
 	deleteGroupMember := func() error {
 		l.Info("get tenant admin client")
-		mtci, err := getMinioTenantClientInfo(ctx, r, *gb.Status.TenantRef)
+		mtci, err := getMinioTenantClientInfo(ctx, r, gb.Status.CurrentSpec.TenantRef)
 		if err != nil {
 			return err
 		}
@@ -521,31 +517,18 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 		}
 
 		l.Info("delete minio group member")
-		gd, err := mtac.GetGroupDescription(ctx, *gb.Status.Group)
-		if err != nil {
-			return err
-		}
-		ms := []string{}
-		for _, m := range gd.Members {
-			if m == *gb.Status.User {
-				continue
-			}
-			ms = append(ms, m)
-		}
 		err = mtac.UpdateGroupMembers(ctx, madmin.GroupAddRemove{
-			Group:    *gb.Status.Group,
-			Members:  ms,
-			IsRemove: false,
+			Group:    gb.Status.CurrentSpec.Group,
+			Members:  []string{gb.Status.CurrentSpec.User},
+			IsRemove: true,
 		})
 		if err != nil {
 			return err
 		}
 
 		l.Info("clear status")
-		gb.Status.Group = nil
-		gb.Status.TenantRef = nil
-		gb.Status.User = nil
-		err = r.Status().Update(ctx, gb)
+		gb.Status.CurrentSpec = nil
+		err = r.Update(ctx, gb)
 		if err != nil {
 			return err
 		}
@@ -556,7 +539,7 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 	if !gb.ObjectMeta.DeletionTimestamp.IsZero() {
 		l.Info("marked for deletion")
 
-		if gb.Status.TenantRef != nil && gb.Status.User != nil && gb.Status.Group != nil {
+		if gb.Status.CurrentSpec != nil {
 			l.Info("delete group member (status set)")
 
 			err = deleteGroupMember()
@@ -588,7 +571,7 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 		return reconcile.Result{}, nil
 	}
 
-	if (gb.Status.TenantRef != nil) && ((gb.Status.User != nil && *gb.Status.User != gb.Spec.User) || (gb.Status.Group != nil && *gb.Status.Group != gb.Spec.Group)) {
+	if gb.Status.CurrentSpec != nil && (gb.Status.CurrentSpec.Group != gb.Spec.Group || gb.Status.CurrentSpec.User != gb.Spec.User) {
 		l.Info("delete group member (status and spec differ)")
 
 		err = deleteGroupMember()
@@ -599,11 +582,11 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 		return reconcile.Result{}, nil
 	}
 
-	if gb.Status.TenantRef == nil && gb.Status.User == nil && gb.Status.Group == nil {
+	if gb.Status.CurrentSpec == nil {
 		l.Info("add group member (status unset)")
 
 		l.Info("get tenant admin client")
-		mtci, err := getMinioTenantClientInfo(ctx, r, *gb.Status.TenantRef)
+		mtci, err := getMinioTenantClientInfo(ctx, r, gb.Spec.TenantRef)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -613,21 +596,9 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 		}
 
 		l.Info("add minio group member")
-		gd, err := mtac.GetGroupDescription(ctx, gb.Spec.Group)
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-		ms := []string{}
-		for _, m := range gd.Members {
-			if m == gb.Spec.User {
-				continue
-			}
-			ms = append(ms, m)
-		}
-		ms = append(ms, gb.Spec.User)
 		err = mtac.UpdateGroupMembers(ctx, madmin.GroupAddRemove{
-			Group:    *gb.Status.Group,
-			Members:  ms,
+			Group:    gb.Spec.Group,
+			Members:  []string{gb.Spec.User},
 			IsRemove: false,
 		})
 		if err != nil {
@@ -635,10 +606,8 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 		}
 
 		l.Info("set status")
-		gb.Status.Group = &gb.Spec.Group
-		gb.Status.TenantRef = gb.Spec.TenantRef
-		gb.Status.User = &gb.Spec.User
-		err = r.Status().Update(ctx, gb)
+		gb.Status.CurrentSpec = &gb.Spec
+		err = r.Update(ctx, gb)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -675,11 +644,11 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 	if !p.ObjectMeta.DeletionTimestamp.IsZero() {
 		l.Info("marked for deletion")
 
-		if p.Status.TenantRef != nil && p.Status.Name != nil {
+		if p.Status.CurrentSpec != nil {
 			l.Info("delete policy (status set)")
 
 			l.Info("get tenant client")
-			mtci, err := getMinioTenantClientInfo(ctx, r, *p.Status.TenantRef)
+			mtci, err := getMinioTenantClientInfo(ctx, r, p.Status.CurrentSpec.TenantRef)
 			if err != nil {
 				return reconcile.Result{}, err
 			}
@@ -689,7 +658,14 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 			}
 
 			l.Info("delete minio policy")
-			err = mtac.DeletePolicy(ctx, *p.Status.Name)
+			err = mtac.RemoveCannedPolicy(ctx, p.Status.CurrentSpec.Name)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+
+			l.Info("clear status")
+			p.Status.CurrentSpec = nil
+			err = r.Update(ctx, p)
 			if err != nil {
 				return reconcile.Result{}, err
 			}
@@ -718,11 +694,11 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 		return reconcile.Result{}, nil
 	}
 
-	if p.Status.TenantRef != nil && p.Status.Name != nil {
+	if p.Status.CurrentSpec != nil {
 		l.Info("check for policy change")
 
 		l.Info("get tenant admin client")
-		mtci, err := getMinioTenantClientInfo(ctx, r, *p.Status.TenantRef)
+		mtci, err := getMinioTenantClientInfo(ctx, r, p.Status.CurrentSpec.TenantRef)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -732,7 +708,7 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 		}
 
 		l.Info("get policy")
-		mp, err := mtac.InfoCannedPolicyV2(ctx, *p.Status.Name)
+		mp, err := mtac.InfoCannedPolicyV2(ctx, p.Status.CurrentSpec.Name)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -743,11 +719,11 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 		return reconcile.Result{}, fmt.Errorf("unimplemented")
 	}
 
-	if p.Status.TenantRef == nil && p.Status.Name == nil {
+	if p.Status.CurrentSpec == nil {
 		l.Info("create policy (status unset)")
 
 		l.Info("get tenant admin client")
-		mtci, err := getMinioTenantClientInfo(ctx, r, *p.Status.TenantRef)
+		mtci, err := getMinioTenantClientInfo(ctx, r, p.Spec.TenantRef)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -772,9 +748,8 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 		}
 
 		l.Info("set status")
-		p.Status.Name = &p.Spec.Name
-		p.Status.TenantRef = &p.Spec.TenantRef
-		err = r.Status().Update(ctx, p)
+		p.Status.CurrentSpec = &p.Spec
+		err = r.Update(ctx, p)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -809,7 +784,7 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 
 	detachPolicyMember := func() error {
 		l.Info("get tenant admin client")
-		mtci, err := getMinioTenantClientInfo(ctx, r, *pb.Status.TenantRef)
+		mtci, err := getMinioTenantClientInfo(ctx, r, pb.Status.CurrentSpec.TenantRef)
 		if err != nil {
 			return err
 		}
@@ -820,19 +795,19 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 
 		l.Info("detach minio policy from identity")
 		req := madmin.PolicyAssociationReq{
-			Policies: []string{*pb.Status.Policy},
+			Policies: []string{pb.Status.CurrentSpec.Policy},
 		}
 		ldap := false
-		if pb.Status.Group.Ldap != nil {
+		if pb.Status.CurrentSpec.Group.Ldap != nil {
 			ldap = true
-			req.Group = *pb.Status.Group.Ldap
-		} else if pb.Status.User.Ldap != nil {
+			req.Group = *pb.Status.CurrentSpec.Group.Ldap
+		} else if pb.Status.CurrentSpec.User.Ldap != nil {
 			ldap = true
-			req.User = *pb.Status.User.Ldap
-		} else if pb.Status.Group.Builtin != nil {
-			req.Group = *pb.Status.Group.Builtin
-		} else if pb.Status.User.Builtin != nil {
-			req.User = *pb.Status.User.Builtin
+			req.User = *pb.Status.CurrentSpec.User.Ldap
+		} else if pb.Status.CurrentSpec.Group.Builtin != nil {
+			req.Group = *pb.Status.CurrentSpec.Group.Builtin
+		} else if pb.Status.CurrentSpec.User.Builtin != nil {
+			req.User = *pb.Status.CurrentSpec.User.Builtin
 		}
 		if ldap {
 			_, err = mtac.DetachPolicyLDAP(ctx, req)
@@ -844,11 +819,8 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 		}
 
 		l.Info("clear status")
-		pb.Status.Group = nil
-		pb.Status.Policy = nil
-		pb.Status.TenantRef = nil
-		pb.Status.User = nil
-		err = r.Status().Update(ctx, pb)
+		pb.Status.CurrentSpec = nil
+		err = r.Update(ctx, pb)
 		if err != nil {
 			return err
 		}
@@ -859,7 +831,7 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 	if !pb.ObjectMeta.DeletionTimestamp.IsZero() {
 		l.Info("marked for deletion")
 
-		if pb.Status.Group != nil && pb.Status.Policy != nil && pb.Status.TenantRef != nil && pb.Status.User != nil {
+		if pb.Status.CurrentSpec != nil {
 			l.Info("detach policy member (status set)")
 
 			err = detachPolicyMember()
@@ -891,7 +863,17 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 		return reconcile.Result{}, nil
 	}
 
-	if (pb.Status.TenantRef != nil) && ((pb.Status.Group != nil && *pb.Status.Group != pb.Spec.Group) || (pb.Status.Policy != nil && *pb.Status.Policy != pb.Spec.Policy) || (pb.Status.User != nil && *pb.Status.User != pb.Spec.User)) {
+	val := func(p *string) string {
+		if p == nil {
+			return ""
+		}
+		return *p
+	}
+
+	if (pb.Status.CurrentSpec != nil) && (val(pb.Status.CurrentSpec.Group.Builtin) != val(pb.Spec.Group.Builtin) ||
+		val(pb.Status.CurrentSpec.Group.Ldap) != val(pb.Spec.Group.Ldap) ||
+		val(pb.Status.CurrentSpec.User.Builtin) != val(pb.Spec.User.Builtin) ||
+		val(pb.Status.CurrentSpec.User.Ldap) != val(pb.Spec.User.Ldap)) {
 		l.Info("detach policy member (status and spec differ)")
 
 		err = detachPolicyMember()
@@ -902,11 +884,11 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 		return reconcile.Result{}, nil
 	}
 
-	if pb.Status.TenantRef == nil && pb.Status.Group != nil && pb.Status.Policy != nil && pb.Status.User == nil {
+	if pb.Status.CurrentSpec == nil {
 		l.Info("attach policy member (status unset)")
 
 		l.Info("get tenant admin client")
-		mtci, err := getMinioTenantClientInfo(ctx, r, *pb.Status.TenantRef)
+		mtci, err := getMinioTenantClientInfo(ctx, r, pb.Spec.TenantRef)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -920,7 +902,7 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 			Policies: []string{pb.Spec.Policy},
 		}
 		ldap := false
-		if *pb.Spec.Group.Ldap != "" {
+		if pb.Spec.Group.Ldap != nil {
 			ldap = true
 			req.Group = *pb.Spec.Group.Ldap
 		} else if pb.Spec.User.Ldap != nil {
@@ -941,11 +923,8 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 		}
 
 		l.Info("set status")
-		pb.Status.Group = &pb.Spec.Group
-		pb.Status.Policy = &pb.Spec.Policy
-		pb.Status.TenantRef = &pb.Spec.TenantRef
-		pb.Status.User = &pb.Spec.User
-		err = r.Status().Update(ctx, pb)
+		pb.Status.CurrentSpec = &pb.Spec
+		err = r.Update(ctx, pb)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -981,11 +960,11 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 	if !u.ObjectMeta.DeletionTimestamp.IsZero() {
 		l.Info("marked for deletion")
 
-		if u.Status.TenantRef != nil && u.Status.AccessKey != nil {
+		if u.Status.CurrentSpec != nil {
 			l.Info("delete user (status set)")
 
 			l.Info("get tenant admin client")
-			mtci, err := getMinioTenantClientInfo(ctx, r, *u.Status.TenantRef)
+			mtci, err := getMinioTenantClientInfo(ctx, r, u.Status.CurrentSpec.TenantRef)
 			if err != nil {
 				return reconcile.Result{}, err
 			}
@@ -995,15 +974,14 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 			}
 
 			l.Info("delete minio user")
-			err = mtac.RemoveUser(ctx, *u.Status.AccessKey)
+			err = mtac.RemoveUser(ctx, u.Status.CurrentSpec.AccessKey)
 			if err != nil {
 				return reconcile.Result{}, err
 			}
 
 			l.Info("clear status")
-			u.Status.AccessKey = nil
-			u.Status.TenantRef = nil
-			err = r.Status().Update(ctx, u)
+			u.Status.CurrentSpec = nil
+			err = r.Update(ctx, u)
 			if err != nil {
 				return reconcile.Result{}, err
 			}
@@ -1032,11 +1010,11 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 		return reconcile.Result{}, nil
 	}
 
-	if u.Status.AccessKey != nil && u.Status.TenantRef != nil {
+	if u.Status.CurrentSpec != nil {
 		l.Info("check for user change")
 
 		l.Info("get tenant admin client")
-		mtci, err := getMinioTenantClientInfo(ctx, r, *u.Status.TenantRef)
+		mtci, err := getMinioTenantClientInfo(ctx, r, u.Status.CurrentSpec.TenantRef)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -1046,7 +1024,7 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 		}
 
 		l.Info("get user")
-		ui, err := mtac.GetUserInfo(ctx, *u.Status.AccessKey)
+		ui, err := mtac.GetUserInfo(ctx, u.Status.CurrentSpec.AccessKey)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -1062,7 +1040,7 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 
 		if ui.SecretKey != usk {
 			l.Info("update user (secret key change)")
-			err = mtac.SetUserReq(ctx, u.Spec.AccessKey, madmin.AddOrUpdateUserReq{SecretKey: usk})
+			err = mtac.AddUser(ctx, u.Spec.AccessKey, usk)
 			if err != nil {
 				return reconcile.Result{}, err
 			}
@@ -1070,7 +1048,8 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 			return reconcile.Result{}, nil
 		}
 	}
-	if u.Status.AccessKey == nil && u.Status.TenantRef == nil {
+
+	if u.Status.CurrentSpec == nil {
 		l.Info("create user (status unset)")
 
 		l.Info("get tenant admin client")
@@ -1099,9 +1078,8 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 		}
 
 		l.Info("set status")
-		u.Status.AccessKey = &u.Spec.AccessKey
-		u.Status.TenantRef = &u.Spec.TenantRef
-		err = r.Status().Update(ctx, u)
+		u.Status.CurrentSpec = &u.Spec
+		err = r.Update(ctx, u)
 		if err != nil {
 			return reconcile.Result{}, err
 		}

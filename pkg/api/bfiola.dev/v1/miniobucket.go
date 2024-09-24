@@ -27,8 +27,8 @@ type MinioBucketSpec struct {
 
 // MinioBucketStatus defines the current state of MinioBucket
 type MinioBucketStatus struct {
-	Name      *string      `json:"name,omitempty"`
-	TenantRef *ResourceRef `json:"tenantRef,omitempty"`
+	Synced      *bool            `json:"synced,omitempty"`
+	CurrentSpec *MinioBucketSpec `json:"currentSpec,omitempty"`
 }
 
 // +k8s:deepcopy-gen=true

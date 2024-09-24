@@ -34,8 +34,8 @@ type MinioPolicySpec struct {
 
 // MinioPolicyStatus defines the current state of MinioPolicy
 type MinioPolicyStatus struct {
-	Name      *string      `json:"name,omitempty"`
-	TenantRef *ResourceRef `json:"tenantRef,omitempty"`
+	Synced      *bool            `json:"synced,omitempty"`
+	CurrentSpec *MinioPolicySpec `json:"currentSpec,omitempty"`
 }
 
 // +k8s:deepcopy-gen=true

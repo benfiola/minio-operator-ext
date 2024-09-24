@@ -8,8 +8,6 @@ spec:
     - name: v1
       served: true
       storage: true
-      subresources:
-        status: {}
       schema:
         openAPIV3Schema:
           type: object
@@ -29,24 +27,22 @@ spec:
             status:
               type: object
               properties:
-                name:
-                  type: string
-                tenantRef:
+                currentSpec:
                   type: object
-                  properties:
-                    namespace:
-                      type: string
-                    name:
-                      type: string
+                  x-kubernetes-preserve-unknown-fields: true
       additionalPrinterColumns:
-        - name: Tenant Ref
+        - name: Tenant Namespace
           type: string
-          description: Tenant Ref
-          jsonPath: .status.tenantRef
-        - name: Name
+          description: Tenant Namespace
+          jsonPath: .status.currentSpec.tenantRef.namespace
+        - name: Tenant Name
           type: string
           description: Tenant Name
-          jsonPath: .status.name
+          jsonPath: .status.currentSpec.tenantRef.name
+        - name: Name
+          type: string
+          description: Name
+          jsonPath: .status.currentSpec.name
   scope: Namespaced
   names:
     plural: miniobuckets
@@ -63,8 +59,6 @@ spec:
     - name: v1
       served: true
       storage: true
-      subresources:
-        status: {}
       schema:
         openAPIV3Schema:
           type: object
@@ -93,18 +87,22 @@ spec:
             status:
               type: object
               properties:
-                tenantRef:
+                currentSpec:
                   type: object
-                  properties:
-                    namespace:
-                      type: string
-                    name:
-                      type: string
+                  x-kubernetes-preserve-unknown-fields: true
       additionalPrinterColumns:
-        - name: Tenant Ref
+        - name: Tenant Namespace
           type: string
-          description: Tenant Ref
-          jsonPath: .status.tenantRef
+          description: Tenant Namespace
+          jsonPath: .status.currentSpec.tenantRef.namespace
+        - name: Tenant Name
+          type: string
+          description: Tenant Name
+          jsonPath: .status.currentSpec.tenantRef.name
+        - name: Access Key
+          type: string
+          description: Access Key
+          jsonPath: .status.currentSpec.accessKey
   scope: Namespaced
   names:
     plural: miniousers
@@ -121,8 +119,6 @@ spec:
     - name: v1
       served: true
       storage: true
-      subresources:
-        status: {}
       schema:
         openAPIV3Schema:
           type: object
@@ -142,18 +138,22 @@ spec:
             status:
               type: object
               properties:
-                tenantRef:
+                currentSpec:
                   type: object
-                  properties:
-                    namespace:
-                      type: string
-                    name:
-                      type: string
+                  x-kubernetes-preserve-unknown-fields: true
       additionalPrinterColumns:
-        - name: Tenant Ref
+        - name: Tenant Namespace
           type: string
-          description: Tenant Ref
-          jsonPath: .status.tenantRef
+          description: Tenant Namespace
+          jsonPath: .status.currentSpec.tenantRef.namespace
+        - name: Tenant Name
+          type: string
+          description: Tenant Name
+          jsonPath: .status.currentSpec.tenantRef.name
+        - name: Name
+          type: string
+          description: Name
+          jsonPath: .status.currentSpec.name
   scope: Namespaced
   names:
     plural: miniogroups
@@ -170,8 +170,6 @@ spec:
     - name: v1
       served: true
       storage: true
-      subresources:
-        status: {}
       schema:
         openAPIV3Schema:
           type: object
@@ -193,18 +191,26 @@ spec:
             status:
               type: object
               properties:
-                tenantRef:
+                currentSpec:
                   type: object
-                  properties:
-                    namespace:
-                      type: string
-                    name:
-                      type: string
+                  x-kubernetes-preserve-unknown-fields: true
       additionalPrinterColumns:
-        - name: Tenant Ref
+        - name: Tenant Namespace
           type: string
-          description: Tenant Ref
-          jsonPath: .status.tenantRef
+          description: Tenant Namespace
+          jsonPath: .status.currentSpec.tenantRef.namespace
+        - name: Tenant Name
+          type: string
+          description: Tenant Name
+          jsonPath: .status.currentSpec.tenantRef.name
+        - name: User
+          type: string
+          description: User
+          jsonPath: .status.currentSpec.user
+        - name: Group
+          type: string
+          description: Group
+          jsonPath: .status.currentSpec.group
   scope: Namespaced
   names:
     plural: miniogroupbindings
@@ -221,8 +227,6 @@ spec:
     - name: v1
       served: true
       storage: true
-      subresources:
-        status: {}
       schema:
         openAPIV3Schema:
           type: object
@@ -260,18 +264,22 @@ spec:
             status:
               type: object
               properties:
-                tenantRef:
+                currentSpec:
                   type: object
-                  properties:
-                    namespace:
-                      type: string
-                    name:
-                      type: string
+                  x-kubernetes-preserve-unknown-fields: true
       additionalPrinterColumns:
-        - name: Tenant Ref
+        - name: Tenant Namespace
           type: string
-          description: Tenant Ref
-          jsonPath: .status.tenantRef
+          description: Tenant Namespace
+          jsonPath: .status.currentSpec.tenantRef.namespace
+        - name: Tenant Name
+          type: string
+          description: Tenant Name
+          jsonPath: .status.currentSpec.tenantRef.name
+        - name: Name
+          type: string
+          description: Name
+          jsonPath: .status.currentSpec.name
   scope: Namespaced
   names:
     plural: miniopolicies
@@ -288,8 +296,6 @@ spec:
     - name: v1
       served: true
       storage: true
-      subresources:
-        status: {}
       schema:
         openAPIV3Schema:
           type: object
@@ -323,18 +329,30 @@ spec:
             status:
               type: object
               properties:
-                tenantRef:
+                currentSpec:
                   type: object
-                  properties:
-                    namespace:
-                      type: string
-                    name:
-                      type: string
+                  x-kubernetes-preserve-unknown-fields: true
       additionalPrinterColumns:
-        - name: Tenant Ref
+        - name: Tenant Namespace
           type: string
-          description: Tenant Ref
-          jsonPath: .status.tenantRef
+          description: Tenant Namespace
+          jsonPath: .status.currentSpec.tenantRef.namespace
+        - name: Tenant Name
+          type: string
+          description: Tenant Name
+          jsonPath: .status.currentSpec.tenantRef.name
+        - name: Policy
+          type: string
+          description: Policy
+          jsonPath: .status.currentSpec.policy
+        - name: User
+          type: string
+          description: User
+          jsonPath: .status.currentSpec.user
+        - name: Group
+          type: string
+          description: Group
+          jsonPath: .status.currentSpec.group
   scope: Namespaced
   names:
     plural: miniopolicybindings

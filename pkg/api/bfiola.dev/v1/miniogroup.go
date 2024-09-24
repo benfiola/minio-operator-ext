@@ -25,8 +25,8 @@ type MinioGroupSpec struct {
 
 // MinioGroupStatus defines the current state of MinioGroup
 type MinioGroupStatus struct {
-	Name      *string      `json:"name"`
-	TenantRef *ResourceRef `json:"tenantRef,omitempty"`
+	Synced      *bool           `json:"synced,omitempty"`
+	CurrentSpec *MinioGroupSpec `json:"currentSpec,omitempty"`
 }
 
 // +k8s:deepcopy-gen=true

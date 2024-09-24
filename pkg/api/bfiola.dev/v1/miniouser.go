@@ -26,8 +26,8 @@ type MinioUserSpec struct {
 
 // MinioUserStatus defines the current state of MinioUser
 type MinioUserStatus struct {
-	AccessKey *string      `json:"accessKey,omitempty"`
-	TenantRef *ResourceRef `json:"resourceRef,omitempty"`
+	Synced      *bool          `json:"synced,omitempty"`
+	CurrentSpec *MinioUserSpec `json:"currentSpec,omitempty"`
 }
 
 // +k8s:deepcopy-gen=true

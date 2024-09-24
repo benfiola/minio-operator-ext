@@ -32,10 +32,8 @@ type MinioPolicyBindingSpec struct {
 
 // MinioPolicyBindingStatus defines the current state of MinioPolicyBinding
 type MinioPolicyBindingStatus struct {
-	Group     *MinioPolicyBindingIdentity `json:"group,omitempty"`
-	Policy    *string                     `json:"policy"`
-	TenantRef *ResourceRef                `json:"tenantRef,omitempty"`
-	User      *MinioPolicyBindingIdentity `json:"user,omitempty"`
+	Synced      *bool                   `json:"synced,omitempty"`
+	CurrentSpec *MinioPolicyBindingSpec `json:"currentSpec,omitempty"`
 }
 
 // +k8s:deepcopy-gen=true
