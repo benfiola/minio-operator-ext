@@ -801,14 +801,74 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 	l := r.logger.WithValues("resource", req.NamespacedName.String())
 	l.Info("reconcile")
 
-	pb := &v1.MinioGroup{}
+	pb := &v1.MinioPolicyBinding{}
 	err := r.Get(ctx, req.NamespacedName, pb)
 	if err != nil {
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 
+	detachPolicyMember := func() error {
+		l.Info("get tenant admin client")
+		mtci, err := getMinioTenantClientInfo(ctx, r, *pb.Status.TenantRef)
+		if err != nil {
+			return err
+		}
+		mtac, err := mtci.GetAdminClient(ctx)
+		if err != nil {
+			return err
+		}
+
+		l.Info("detach minio policy from identity")
+		req := madmin.PolicyAssociationReq{
+			Policies: []string{*pb.Status.Policy},
+		}
+		ldap := false
+		if pb.Status.Group.Ldap != nil {
+			ldap = true
+			req.Group = *pb.Status.Group.Ldap
+		} else if pb.Status.User.Ldap != nil {
+			ldap = true
+			req.User = *pb.Status.User.Ldap
+		} else if pb.Status.Group.Builtin != nil {
+			req.Group = *pb.Status.Group.Builtin
+		} else if pb.Status.User.Builtin != nil {
+			req.User = *pb.Status.User.Builtin
+		}
+		if ldap {
+			_, err = mtac.DetachPolicyLDAP(ctx, req)
+		} else {
+			_, err = mtac.DetachPolicy(ctx, req)
+		}
+		if err != nil {
+			return err
+		}
+
+		l.Info("clear status")
+		pb.Status.Group = nil
+		pb.Status.Policy = nil
+		pb.Status.TenantRef = nil
+		pb.Status.User = nil
+		err = r.Status().Update(ctx, pb)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}
+
 	if !pb.ObjectMeta.DeletionTimestamp.IsZero() {
 		l.Info("marked for deletion")
+
+		if pb.Status.Group != nil && pb.Status.Policy != nil && pb.Status.TenantRef != nil && pb.Status.User != nil {
+			l.Info("detach policy member (status set)")
+
+			err = detachPolicyMember()
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+
+			return reconcile.Result{}, nil
+		}
 
 		l.Info("clear finalizer")
 		controllerutil.RemoveFinalizer(pb, finalizer)
@@ -824,6 +884,68 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 		l.Info("add finalizer")
 		controllerutil.AddFinalizer(pb, finalizer)
 		err = r.Update(ctx, pb)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{}, nil
+	}
+
+	if (pb.Status.TenantRef != nil) && ((pb.Status.Group != nil && *pb.Status.Group != pb.Spec.Group) || (pb.Status.Policy != nil && *pb.Status.Policy != pb.Spec.Policy) || (pb.Status.User != nil && *pb.Status.User != pb.Spec.User)) {
+		l.Info("detach policy member (status and spec differ)")
+
+		err = detachPolicyMember()
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{}, nil
+	}
+
+	if pb.Status.TenantRef == nil && pb.Status.Group != nil && pb.Status.Policy != nil && pb.Status.User == nil {
+		l.Info("attach policy member (status unset)")
+
+		l.Info("get tenant admin client")
+		mtci, err := getMinioTenantClientInfo(ctx, r, *pb.Status.TenantRef)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		mtac, err := mtci.GetAdminClient(ctx)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		l.Info("attach minio policy to identity")
+		req := madmin.PolicyAssociationReq{
+			Policies: []string{pb.Spec.Policy},
+		}
+		ldap := false
+		if *pb.Spec.Group.Ldap != "" {
+			ldap = true
+			req.Group = *pb.Spec.Group.Ldap
+		} else if pb.Spec.User.Ldap != nil {
+			ldap = true
+			req.User = *pb.Spec.User.Ldap
+		} else if pb.Spec.Group.Builtin != nil {
+			req.Group = *pb.Spec.Group.Builtin
+		} else if pb.Spec.User.Builtin != nil {
+			req.User = *pb.Spec.User.Builtin
+		}
+		if ldap {
+			_, err = mtac.AttachPolicyLDAP(ctx, req)
+		} else {
+			_, err = mtac.AttachPolicy(ctx, req)
+		}
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		l.Info("set status")
+		pb.Status.Group = &pb.Spec.Group
+		pb.Status.Policy = &pb.Spec.Policy
+		pb.Status.TenantRef = &pb.Spec.TenantRef
+		pb.Status.User = &pb.Spec.User
+		err = r.Status().Update(ctx, pb)
 		if err != nil {
 			return reconcile.Result{}, err
 		}

@@ -17,14 +17,25 @@ type MinioPolicyBinding struct {
 	Status MinioPolicyBindingStatus `json:"status,omitempty"`
 }
 
+type MinioPolicyBindingIdentity struct {
+	Builtin *string `json:"builtin,omitempty"`
+	Ldap    *string `json:"ldap,omitempty"`
+}
+
 // MinioPolicyBindingSpec defines the desired state of MinioPolicyBinding
 type MinioPolicyBindingSpec struct {
-	TenantRef ResourceRef `json:"tenantRef"`
+	Group     MinioPolicyBindingIdentity `json:"group,omitempty"`
+	Policy    string                     `json:"policy"`
+	TenantRef ResourceRef                `json:"tenantRef"`
+	User      MinioPolicyBindingIdentity `json:"user,omitempty"`
 }
 
 // MinioPolicyBindingStatus defines the current state of MinioPolicyBinding
 type MinioPolicyBindingStatus struct {
-	TenantRef *ResourceRef `json:"tenantRef,omitempty"`
+	Group     *MinioPolicyBindingIdentity `json:"group,omitempty"`
+	Policy    *string                     `json:"policy"`
+	TenantRef *ResourceRef                `json:"tenantRef,omitempty"`
+	User      *MinioPolicyBindingIdentity `json:"user,omitempty"`
 }
 
 // +k8s:deepcopy-gen=true
