@@ -19,11 +19,13 @@ type MinioGroup struct {
 
 // MinioGroupSpec defines the desired state of MinioGroup
 type MinioGroupSpec struct {
+	Name      string      `json:"name"`
 	TenantRef ResourceRef `json:"tenantRef"`
 }
 
 // MinioGroupStatus defines the current state of MinioGroup
 type MinioGroupStatus struct {
+	Name      *string      `json:"name"`
 	TenantRef *ResourceRef `json:"tenantRef,omitempty"`
 }
 

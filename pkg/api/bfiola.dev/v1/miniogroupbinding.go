@@ -19,12 +19,16 @@ type MinioGroupBinding struct {
 
 // MinioGroupBindingSpec defines the desired state of MinioGroupBinding
 type MinioGroupBindingSpec struct {
+	Group     string       `json:"group"`
 	TenantRef *ResourceRef `json:"tenantRef,omitempty"`
+	User      string       `json:"user"`
 }
 
 // MinioGroupBindingStatus defines the current state of MinioGroupBinding
 type MinioGroupBindingStatus struct {
-	TenantRef ResourceRef `json:"tenantRef"`
+	Group     *string      `json:"group,omitempty"`
+	TenantRef *ResourceRef `json:"tenantRef,omitempty"`
+	User      *string      `json:"user,omitempty"`
 }
 
 // +k8s:deepcopy-gen=true

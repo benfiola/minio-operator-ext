@@ -186,8 +186,7 @@ func getMinioTenantClientInfo(ctx context.Context, c client.Client, rr v1.Resour
 		tsvcpn = "https-minio"
 	}
 	e := ""
-	for i := range tsvc.Spec.Ports {
-		p := tsvc.Spec.Ports[i]
+	for _, p := range tsvc.Spec.Ports {
 		if p.Name != tsvcpn {
 			continue
 		}
@@ -244,7 +243,7 @@ func (mtci *minioTenantClientInfo) GetClient(ctx context.Context) (*minioclient.
 	return mtc, nil
 }
 
-func (mtci *minioTenantClientInfo) GetAdminClient(ctx context.Context, rr v1.ResourceRef) (*madmin.AdminClient, error) {
+func (mtci *minioTenantClientInfo) GetAdminClient(ctx context.Context) (*madmin.AdminClient, error) {
 	mtac, err := madmin.New(mtci.Endpoint, mtci.AccessKey, mtci.SecretKey, mtci.Secure)
 	mtac.SetCustomTransport(&http.Transport{
 		TLSClientConfig: &tls.Config{
@@ -280,48 +279,42 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 
-	deleteBucket := func() error {
-		l.Info("get tenant client")
-		mtci, err := getMinioTenantClientInfo(ctx, r, *b.Status.TenantRef)
-		if err != nil {
-			return err
-		}
-		mtc, err := mtci.GetClient(ctx)
-		if err != nil {
-			return err
-		}
-
-		l.Info("delete minio bucket")
-		err = mtc.RemoveBucket(ctx, *b.Status.Name)
-		if err != nil {
-			mcerr, ok := err.(minioclient.ErrorResponse)
-			if !ok {
-				return err
-			}
-			if mcerr.Code != "NoSuchBucket" {
-				return err
-			}
-		}
-
-		l.Info("clear status")
-		b.Status.Name = nil
-		b.Status.TenantRef = nil
-		err = r.Status().Update(ctx, b)
-		if err != nil {
-			return err
-		}
-
-		return nil
-	}
-
 	if !b.ObjectMeta.DeletionTimestamp.IsZero() {
 		l.Info("marked for deletion")
 		if b.Status.TenantRef != nil && b.Status.Name != nil {
 			l.Info("delete bucket (status set)")
-			err := deleteBucket()
+
+			l.Info("get tenant client")
+			mtci, err := getMinioTenantClientInfo(ctx, r, *b.Status.TenantRef)
 			if err != nil {
 				return reconcile.Result{}, err
 			}
+			mtc, err := mtci.GetClient(ctx)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+
+			l.Info("delete minio bucket")
+			err = mtc.RemoveBucket(ctx, *b.Status.Name)
+			if err != nil {
+				mcerr, ok := err.(minioclient.ErrorResponse)
+				if !ok {
+					return reconcile.Result{}, err
+				}
+				if mcerr.Code != "NoSuchBucket" {
+					return reconcile.Result{}, err
+				}
+			}
+
+			l.Info("clear status")
+			b.Status.Name = nil
+			b.Status.TenantRef = nil
+			err = r.Status().Update(ctx, b)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+
+			return reconcile.Result{}, nil
 		}
 
 		l.Info("clear finalizer")
@@ -338,16 +331,6 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 		l.Info("add finalizer")
 		controllerutil.AddFinalizer(b, finalizer)
 		err = r.Update(ctx, b)
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-
-		return reconcile.Result{}, nil
-	}
-
-	if (b.Status.Name != nil && b.Status.TenantRef != nil) && (*b.Status.Name != b.Spec.Name || *b.Status.TenantRef != b.Spec.TenantRef) {
-		l.Info("re-create bucket (status and spec differ)")
-		err := deleteBucket()
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -413,6 +396,39 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 	if !g.ObjectMeta.DeletionTimestamp.IsZero() {
 		l.Info("marked for deletion")
 
+		if g.Status.TenantRef != nil && g.Status.Name != nil {
+			l.Info("delete group (status set)")
+
+			l.Info("get tenant admin client")
+			mtci, err := getMinioTenantClientInfo(ctx, r, *g.Status.TenantRef)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+			mtac, err := mtci.GetAdminClient(ctx)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+
+			l.Info("delete minio group")
+			err = mtac.UpdateGroupMembers(ctx, madmin.GroupAddRemove{
+				Group:    *g.Status.Name,
+				IsRemove: true,
+			})
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+
+			l.Info("clear status")
+			g.Status.Name = nil
+			g.Status.TenantRef = nil
+			err = r.Status().Update(ctx, g)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+
+			return reconcile.Result{}, nil
+		}
+
 		l.Info("clear finalizer")
 		controllerutil.RemoveFinalizer(g, finalizer)
 		err = r.Update(ctx, g)
@@ -427,6 +443,39 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 		l.Info("add finalizer")
 		controllerutil.AddFinalizer(g, finalizer)
 		err = r.Update(ctx, g)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{}, nil
+	}
+
+	if g.Status.Name == nil && g.Status.TenantRef == nil {
+		l.Info("create group (status unset)")
+
+		l.Info("get tenant admin client")
+		mtci, err := getMinioTenantClientInfo(ctx, r, g.Spec.TenantRef)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		mtac, err := mtci.GetAdminClient(ctx)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		l.Info("create minio group")
+		err = mtac.UpdateGroupMembers(ctx, madmin.GroupAddRemove{
+			Group:    g.Spec.Name,
+			IsRemove: false,
+		})
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		l.Info("set status")
+		g.Status.Name = &g.Spec.Name
+		g.Status.TenantRef = &g.Spec.TenantRef
+		err = r.Status().Update(ctx, g)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -453,14 +502,69 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 	l := r.logger.WithValues("resource", req.NamespacedName.String())
 	l.Info("reconcile")
 
-	gb := &v1.MinioGroup{}
+	gb := &v1.MinioGroupBinding{}
 	err := r.Get(ctx, req.NamespacedName, gb)
 	if err != nil {
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 
+	deleteGroupMember := func() error {
+		l.Info("get tenant admin client")
+		mtci, err := getMinioTenantClientInfo(ctx, r, *gb.Status.TenantRef)
+		if err != nil {
+			return err
+		}
+		mtac, err := mtci.GetAdminClient(ctx)
+		if err != nil {
+			return err
+		}
+
+		l.Info("delete minio group member")
+		gd, err := mtac.GetGroupDescription(ctx, *gb.Status.Group)
+		if err != nil {
+			return err
+		}
+		ms := []string{}
+		for _, m := range gd.Members {
+			if m == *gb.Status.User {
+				continue
+			}
+			ms = append(ms, m)
+		}
+		err = mtac.UpdateGroupMembers(ctx, madmin.GroupAddRemove{
+			Group:    *gb.Status.Group,
+			Members:  ms,
+			IsRemove: false,
+		})
+		if err != nil {
+			return err
+		}
+
+		l.Info("clear status")
+		gb.Status.Group = nil
+		gb.Status.TenantRef = nil
+		gb.Status.User = nil
+		err = r.Status().Update(ctx, gb)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}
+
 	if !gb.ObjectMeta.DeletionTimestamp.IsZero() {
 		l.Info("marked for deletion")
+
+		if gb.Status.TenantRef != nil && gb.Status.User != nil && gb.Status.Group != nil {
+			l.Info("delete group member (status set)")
+
+			err = deleteGroupMember()
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+
+			return reconcile.Result{}, nil
+		}
 
 		l.Info("clear finalizer")
 		controllerutil.RemoveFinalizer(gb, finalizer)
@@ -481,6 +585,65 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 		}
 
 		return reconcile.Result{}, nil
+	}
+
+	if (gb.Status.TenantRef != nil) && ((gb.Status.User != nil && *gb.Status.User != gb.Spec.User) || (gb.Status.Group != nil && *gb.Status.Group != gb.Spec.Group)) {
+		l.Info("delete group member (status and spec differ)")
+
+		err = deleteGroupMember()
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{}, nil
+	}
+
+	if gb.Status.TenantRef == nil && gb.Status.User == nil && gb.Status.Group == nil {
+		l.Info("add group member (status unset)")
+
+		l.Info("get tenant admin client")
+		mtci, err := getMinioTenantClientInfo(ctx, r, *gb.Status.TenantRef)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		mtac, err := mtci.GetAdminClient(ctx)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		l.Info("add minio group member")
+		gd, err := mtac.GetGroupDescription(ctx, gb.Spec.Group)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		ms := []string{}
+		for _, m := range gd.Members {
+			if m == gb.Spec.User {
+				continue
+			}
+			ms = append(ms, m)
+		}
+		ms = append(ms, gb.Spec.User)
+		err = mtac.UpdateGroupMembers(ctx, madmin.GroupAddRemove{
+			Group:    *gb.Status.Group,
+			Members:  ms,
+			IsRemove: false,
+		})
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		l.Info("set status")
+		gb.Status.Group = &gb.Spec.Group
+		gb.Status.TenantRef = gb.Spec.TenantRef
+		gb.Status.User = &gb.Spec.User
+		err = r.Status().Update(ctx, gb)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{}, nil
+
 	}
 
 	return reconcile.Result{}, nil
