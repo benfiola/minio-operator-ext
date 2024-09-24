@@ -34,21 +34,25 @@ const (
 	finalizer = "bfiola.dev/minio-operator-ext"
 )
 
+// Operator is the public interface for the operator implementation
 type Operator interface {
 	Health() error
 	Run() error
 }
 
+// operator manages all of the crd controllers
 type operator struct {
 	manager manager.Manager
 	logger  *slog.Logger
 }
 
+// OperatorOpts defines the options used to construct a new [operator]
 type OperatorOpts struct {
 	KubeConfig string
 	Logger     *slog.Logger
 }
 
+// Creates a new operator with the provided [OperatorOpts].
 func NewOperator(o *OperatorOpts) (*operator, error) {
 	l := o.Logger
 	if l == nil {
@@ -81,48 +85,41 @@ func NewOperator(o *OperatorOpts) (*operator, error) {
 		return nil, err
 	}
 
-	op := &operator{
+	rs := []reconciler{
+		&minioBucketReconciler{},
+		&minioGroupReconciler{},
+		&minioGroupBindingReconciler{},
+		&minioPolicyReconciler{},
+		&minioPolicyBindingReconciler{},
+		&minioUserReconciler{},
+	}
+	for _, r := range rs {
+		err = r.register(m)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &operator{
 		logger:  l,
 		manager: m,
-	}
-
-	err = (&minioBucketReconciler{}).register(m)
-	if err != nil {
-		return nil, err
-	}
-	err = (&minioGroupReconciler{}).register(m)
-	if err != nil {
-		return nil, err
-	}
-	err = (&minioGroupBindingReconciler{}).register(m)
-	if err != nil {
-		return nil, err
-	}
-	err = (&minioPolicyReconciler{}).register(m)
-	if err != nil {
-		return nil, err
-	}
-	err = (&minioPolicyBindingReconciler{}).register(m)
-	if err != nil {
-		return nil, err
-	}
-	err = (&minioUserReconciler{}).register(m)
-	if err != nil {
-		return nil, err
-	}
-
-	return op, err
+	}, err
 }
 
+// Performs a health check for the given [operator],
+// Returns an error if the [operator] is unhealthy.
 func (o *operator) Health() error {
 	return nil
 }
 
+// Starts the [operator].
+// Runs until terminated or if an error is thrown.
 func (o *operator) Run() error {
 	o.logger.Info("starting operator")
 	return o.manager.Start(context.Background())
 }
 
+// minioTenantClientInfo defines the data required to instantiate a minio client from a given tenant.
 type minioTenantClientInfo struct {
 	AccessKey string
 	CaBundle  *x509.CertPool
@@ -131,6 +128,8 @@ type minioTenantClientInfo struct {
 	Secure    bool
 }
 
+// Returns [minioTenantClientInfo] for a [miniov2.Tenant] referenced by [v1.ResourceRef].
+// Returns an error if unable to fetch tenant information.
 func getMinioTenantClientInfo(ctx context.Context, c client.Client, rr v1.ResourceRef) (*minioTenantClientInfo, error) {
 	if rr.Namespace == "" {
 		return nil, fmt.Errorf("namespace empty")
@@ -172,7 +171,7 @@ func getMinioTenantClientInfo(ctx context.Context, c client.Client, rr v1.Resour
 	k = "MINIO_ROOT_PASSWORD"
 	sk, ok := tce[k]
 	if !ok {
-		return nil, fmt.Errorf("key %s in %s/%s/%s", k, ts.Namespace, ts.Name, tsk)
+		return nil, fmt.Errorf("key %s in %s/%s/%s not found", k, ts.Namespace, ts.Name, tsk)
 	}
 
 	// obtain endpoint
@@ -227,6 +226,8 @@ func getMinioTenantClientInfo(ctx context.Context, c client.Client, rr v1.Resour
 	}, nil
 }
 
+// Generates a [minioclient.Client] for the given [minioTenantClientInfo]
+// Returns an error if the client cannot be created
 func (mtci *minioTenantClientInfo) GetClient(ctx context.Context) (*minioclient.Client, error) {
 	mtc, err := minioclient.New(mtci.Endpoint, &minioclient.Options{
 		Creds:  miniocredentials.NewStaticV4(mtci.AccessKey, mtci.SecretKey, ""),
@@ -244,6 +245,8 @@ func (mtci *minioTenantClientInfo) GetClient(ctx context.Context) (*minioclient.
 	return mtc, nil
 }
 
+// Generates a [madmin.AdminClient] for the given [minioTenantClientInfo]
+// Returns an error if the client cannot be created
 func (mtci *minioTenantClientInfo) GetAdminClient(ctx context.Context) (*madmin.AdminClient, error) {
 	mtac, err := madmin.New(mtci.Endpoint, mtci.AccessKey, mtci.SecretKey, mtci.Secure)
 	mtac.SetCustomTransport(&http.Transport{
@@ -258,11 +261,21 @@ func (mtci *minioTenantClientInfo) GetAdminClient(ctx context.Context) (*madmin.
 	return mtac, nil
 }
 
+// reconciler is the common interface implemented by all CRD reconcilers in this package
+type reconciler interface {
+	reconcile.Reconciler
+	register(m manager.Manager) error
+}
+
+// minioBucketReconciler reconciles [v1.MinioBucket] resources
 type minioBucketReconciler struct {
 	client.Client
 	logger logr.Logger
 }
 
+// Builds a controller with a [minioBucketReconciler].
+// Registers this controller with a [manager.Manager] instance.
+// Returns an error if a controller cannot be built.
 func (r *minioBucketReconciler) register(m manager.Manager) error {
 	r.Client = m.GetClient()
 	ctrl, err := builder.ControllerManagedBy(m).For(&v1.MinioBucket{}).Build(r)
@@ -270,6 +283,8 @@ func (r *minioBucketReconciler) register(m manager.Manager) error {
 	return err
 }
 
+// Reconciles a [reconcile.Request] associated with a [v1.MinioBucket].
+// Returns a error if reconciliation fails.
 func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	l := r.logger.WithValues("resource", req.NamespacedName.String())
 	l.Info("reconcile")
@@ -370,11 +385,15 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 	return reconcile.Result{}, nil
 }
 
+// minioGroupReconciler reconciles [v1.MinioGroup] resources
 type minioGroupReconciler struct {
 	client.Client
 	logger logr.Logger
 }
 
+// Builds a controller with a [minioGroupReconciler].
+// Registers this controller with a [manager.Manager] instance.
+// Returns an error if a controller cannot be built.
 func (r *minioGroupReconciler) register(m manager.Manager) error {
 	r.Client = m.GetClient()
 	ctrl, err := builder.ControllerManagedBy(m).For(&v1.MinioGroup{}).Build(r)
@@ -382,6 +401,8 @@ func (r *minioGroupReconciler) register(m manager.Manager) error {
 	return err
 }
 
+// Reconciles a [reconcile.Request] associated with a [v1.MinioGroup].
+// Returns a error if reconciliation fails.
 func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	l := r.logger.WithValues("resource", req.NamespacedName.String())
 	l.Info("reconcile")
@@ -483,11 +504,15 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 	return reconcile.Result{}, nil
 }
 
+// minioGroupBindingReconciler reconciles [v1.MinioGroupBinding] resources
 type minioGroupBindingReconciler struct {
 	client.Client
 	logger logr.Logger
 }
 
+// Builds a controller with a [minioGroupBindingReconciler].
+// Registers this controller with a [manager.Manager] instance.
+// Returns an error if a controller cannot be built.
 func (r *minioGroupBindingReconciler) register(m manager.Manager) error {
 	r.Client = m.GetClient()
 	ctrl, err := builder.ControllerManagedBy(m).For(&v1.MinioGroupBinding{}).Build(r)
@@ -495,6 +520,8 @@ func (r *minioGroupBindingReconciler) register(m manager.Manager) error {
 	return err
 }
 
+// Reconciles a [reconcile.Request] associated with a [v1.MinioGroupBinding].
+// Returns a error if reconciliation fails.
 func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	l := r.logger.WithValues("resource", req.NamespacedName.String())
 	l.Info("reconcile")
@@ -619,11 +646,15 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 	return reconcile.Result{}, nil
 }
 
+// minioPolicyReconciler reconciles [v1.MinioPolicy] resources
 type minioPolicyReconciler struct {
 	client.Client
 	logger logr.Logger
 }
 
+// Builds a controller with a [minioPolicyReconciler].
+// Registers this controller with a [manager.Manager] instance.
+// Returns an error if a controller cannot be built.
 func (r *minioPolicyReconciler) register(m manager.Manager) error {
 	r.Client = m.GetClient()
 	ctrl, err := builder.ControllerManagedBy(m).For(&v1.MinioPolicy{}).Build(r)
@@ -631,6 +662,8 @@ func (r *minioPolicyReconciler) register(m manager.Manager) error {
 	return err
 }
 
+// Reconciles a [reconcile.Request] associated with a [v1.MinioPolicy].
+// Returns a error if reconciliation fails.
 func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	l := r.logger.WithValues("resource", req.NamespacedName.String())
 	l.Info("reconcile")
@@ -760,11 +793,15 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 	return reconcile.Result{}, nil
 }
 
+// minioPolicyBindingReconciler reconciles [v1.MinioPolicyBinding] resources
 type minioPolicyBindingReconciler struct {
 	client.Client
 	logger logr.Logger
 }
 
+// Builds a controller with a [minioPolicyBindingReconciler].
+// Registers this controller with a [manager.Manager] instance.
+// Returns an error if a controller cannot be built.
 func (r *minioPolicyBindingReconciler) register(m manager.Manager) error {
 	r.Client = m.GetClient()
 	ctrl, err := builder.ControllerManagedBy(m).For(&v1.MinioPolicyBinding{}).Build(r)
@@ -772,6 +809,8 @@ func (r *minioPolicyBindingReconciler) register(m manager.Manager) error {
 	return err
 }
 
+// Reconciles a [reconcile.Request] associated with a [v1.MinioPolicyBinding].
+// Returns a error if reconciliation fails.
 func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	l := r.logger.WithValues("resource", req.NamespacedName.String())
 	l.Info("reconcile")
@@ -935,11 +974,15 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 	return reconcile.Result{}, nil
 }
 
+// minioUserReconciler reconciles [v1.MinioUser] resources
 type minioUserReconciler struct {
 	client.Client
 	logger logr.Logger
 }
 
+// Builds a controller with a [minioUserReconciler].
+// Registers this controller with a [manager.Manager] instance.
+// Returns an error if a controller cannot be built.
 func (r *minioUserReconciler) register(m manager.Manager) error {
 	r.Client = m.GetClient()
 	ctrl, err := builder.ControllerManagedBy(m).For(&v1.MinioUser{}).Build(r)
@@ -947,6 +990,8 @@ func (r *minioUserReconciler) register(m manager.Manager) error {
 	return err
 }
 
+// Reconciles a [reconcile.Request] associated with a [v1.MinioUser].
+// Returns a error if reconciliation fails.
 func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	l := r.logger.WithValues("resource", req.NamespacedName.String())
 	l.Info("reconcile")
