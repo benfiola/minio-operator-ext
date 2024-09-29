@@ -91,7 +91,7 @@ func main() {
 						return err
 					}
 
-					return s.Run()
+					return s.Run(c.Context)
 				},
 			},
 			{

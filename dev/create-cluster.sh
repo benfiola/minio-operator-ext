@@ -20,18 +20,10 @@ echo "create minikube cluster"
 minikube start --force
 
 echo "install minio operator"
-helm install \
-  --namespace minio-operator \
-  --create-namespace \
-  --repo=https://operator.min.io \
-  operator operator
+kubectl apply -f ./dev/minio-operator.yaml
 
 echo "create minio tenant"
-helm install \
-  --namespace minio-tenant \
-  --create-namespace \
-  --repo=https://operator.min.io \
-  tenant tenant
+kubectl apply -f ./dev/minio-tenant.yaml
 
 echo "deploy openldap"
 kubectl apply -f ./dev/openldap.yaml

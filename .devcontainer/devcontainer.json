@@ -1,14 +1,11 @@
 {
-  "containerEnv": {
-    "MC_DISABLE_PAGER": "1",
-    "MC_INSECURE": "1"
-  },
   "customizations": {
     "vscode": {
       "extensions": [
         "esbenp.prettier-vscode",
         "golang.go",
-        "rohit-gohri.format-code-action"
+        "rohit-gohri.format-code-action",
+        "ms-vscode.makefile-tools"
       ],
       "settings": {
         "editor.codeActionsOnSave": [
@@ -16,6 +13,8 @@
           "source.formatDocument"
         ],
         "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "go.testFlags": ["-v"],
+        "go.testTimeout": "300s",
         "launch": {
           "version": "0.2.0",
           "configurations": [
@@ -35,6 +34,7 @@
     }
   },
   "features": {
+    // "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
     "ghcr.io/devcontainers/features/docker-in-docker:2": {},
     "ghcr.io/devcontainers/features/go": {
       "version": "1.22.5"
@@ -44,5 +44,11 @@
     }
   },
   "image": "ubuntu:latest",
-  "postCreateCommand": ".devcontainer/post-create.sh"
+  "postCreateCommand": ".devcontainer/post-create.sh",
+  "remoteEnv": {
+    "MC_DISABLE_PAGER": "1",
+    "MC_INSECURE": "1",
+    "KUBECONFIG": "/workspaces/minio-operator-ext/.dev/kube-config.yaml",
+    "PATH": "/workspaces/minio-operator-ext/.dev:${containerEnv:PATH}"
+  }
 }

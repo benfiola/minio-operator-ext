@@ -22,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	kscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -37,7 +38,7 @@ const (
 // Operator is the public interface for the operator implementation
 type Operator interface {
 	Health() error
-	Run() error
+	Run(ctx context.Context) error
 }
 
 // operator manages all of the crd controllers
@@ -73,7 +74,7 @@ func NewOperator(o *OperatorOpts) (*operator, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = corev1.AddToScheme(s)
+	err = kscheme.AddToScheme(s)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +115,7 @@ func (o *operator) Health() error {
 
 // Starts the [operator].
 // Runs until terminated or if an error is thrown.
-func (o *operator) Run() error {
+func (o *operator) Run(ctx context.Context) error {
 	o.logger.Info("starting operator")
 	return o.manager.Start(context.Background())
 }

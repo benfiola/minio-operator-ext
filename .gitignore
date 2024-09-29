@@ -2,4 +2,7 @@
 /dev/dev.go
 
 # ignore IDE files
-**/.vscode
+/.vscode
+
+# ignore dev assets
+/.dev

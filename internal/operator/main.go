@@ -38,8 +38,8 @@ func New(o *Opts) (*main, error) {
 	}, nil
 }
 
-func (m *main) Run() error {
-	g, _ := errgroup.WithContext(context.Background())
-	g.Go(m.Operator.Run)
+func (m *main) Run(ctx context.Context) error {
+	g, _ := errgroup.WithContext(ctx)
+	g.Go(func() error { return m.Operator.Run(ctx) })
 	return g.Wait()
 }
