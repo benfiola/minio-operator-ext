@@ -2,4 +2,4 @@
 set -ex
 
 # install tools
-make binaries
+make install-tools
