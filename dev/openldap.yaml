@@ -49,6 +49,7 @@ metadata:
   name: openldap
   namespace: openldap
 spec:
+  type: LoadBalancer
   selector:
     app: openldap
   ports:
