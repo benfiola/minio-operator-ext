@@ -436,7 +436,13 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 				IsRemove: true,
 			})
 			if err != nil {
-				return reconcile.Result{}, err
+				merr, ok := err.(madmin.ErrorResponse)
+				if !ok {
+					return reconcile.Result{}, err
+				}
+				if merr.Code != "XMinioAdminNoSuchGroup" {
+					return reconcile.Result{}, err
+				}
 			}
 
 			l.Info("clear status")
@@ -480,6 +486,19 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 		}
 		mtac, err := mtci.GetAdminClient(ctx)
 		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		l.Info("check if minio group exists")
+		_, err = mtac.GetGroupDescription(ctx, g.Spec.Name)
+		if err == nil {
+			return reconcile.Result{}, fmt.Errorf("group %s already exists", g.Spec.Name)
+		}
+		merr, ok := err.(madmin.ErrorResponse)
+		if !ok {
+			return reconcile.Result{}, err
+		}
+		if merr.Code != "XMinioAdminNoSuchGroup" {
 			return reconcile.Result{}, err
 		}
 
@@ -744,13 +763,36 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 		l.Info("get policy")
 		mp, err := mtac.InfoCannedPolicyV2(ctx, p.Status.CurrentSpec.Name)
 		if err != nil {
+			// TODO: handle missing policy
 			return reconcile.Result{}, err
 		}
+		mps := &v1.MinioPolicySpec{}
+		err = json.Unmarshal(mp.Policy, mps)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		// TODO: use status and spec to determine if changed
 		if mp != nil {
 			return reconcile.Result{}, fmt.Errorf("unimplemented")
 		}
 
-		return reconcile.Result{}, fmt.Errorf("unimplemented")
+		l.Info("marshal policy to json")
+		pd, err := json.Marshal(map[string]any{
+			"statement": p.Spec.Statement,
+			"version":   p.Spec.Version,
+		})
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		l.Info("update minio policy")
+		err = mtac.AddCannedPolicy(ctx, p.Spec.Name, pd)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{}, nil
 	}
 
 	if p.Status.CurrentSpec == nil {
@@ -1022,7 +1064,13 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 			l.Info("delete minio user")
 			err = mtac.RemoveUser(ctx, u.Status.CurrentSpec.AccessKey)
 			if err != nil {
-				return reconcile.Result{}, err
+				merr, ok := err.(madmin.ErrorResponse)
+				if !ok {
+					return reconcile.Result{}, err
+				}
+				if merr.Code != "XMinioAdminNoSuchUser" {
+					return reconcile.Result{}, err
+				}
 			}
 
 			l.Info("clear status")
@@ -1070,8 +1118,10 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 		}
 
 		l.Info("get user")
+		// TODO: store secret ref resource version in status to understand if secret key must change
 		ui, err := mtac.GetUserInfo(ctx, u.Status.CurrentSpec.AccessKey)
 		if err != nil {
+			// TODO: handle missing user
 			return reconcile.Result{}, err
 		}
 
@@ -1105,6 +1155,19 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 		}
 		mtac, err := mtci.GetAdminClient(ctx)
 		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		l.Info("check if minio user exists")
+		_, err = mtac.GetUserInfo(ctx, u.Spec.AccessKey)
+		if err == nil {
+			return reconcile.Result{}, fmt.Errorf("user %s already exists", u.Spec.AccessKey)
+		}
+		merr, ok := err.(madmin.ErrorResponse)
+		if !ok {
+			return reconcile.Result{}, err
+		}
+		if merr.Code != "XMinioAdminNoSuchUser" {
 			return reconcile.Result{}, err
 		}
 
