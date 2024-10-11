@@ -51,7 +51,7 @@ clean: delete-minikube-cluster
 	rm -rf $(ASSETS)
 
 .PHONY: dev-cluster
-dev: create-minikube-cluster apply-manifests start-minikube-tunnel start-lb-hosts-manager wait-for-ready
+dev-cluster: create-minikube-cluster apply-manifests start-minikube-tunnel start-lb-hosts-manager wait-for-ready
 
 .PHONY: e2e-test
 e2e-test:

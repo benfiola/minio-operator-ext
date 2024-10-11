@@ -125,7 +125,9 @@ func NewOperator(o *OperatorOpts) (*operator, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	m, err := manager.New(c, manager.Options{
+		Client:                 client.Options{Cache: &client.CacheOptions{DisableFor: []client.Object{&corev1.ConfigMap{}, &corev1.Secret{}, &corev1.Service{}, &miniov2.Tenant{}}}},
 		Controller:             config.Controller{SkipNameValidation: ptr(true)},
 		HealthProbeBindAddress: ":8888",
 		Logger:                 logr.FromSlogHandler(l.Handler()),
