@@ -41,18 +41,18 @@ The following arguments/environment variables configure the operator:
 
 The operator requires the a service account with the following RBAC settings:
 
-| Resource                         | Verbs                   | Why                                                                                                                 |
-| -------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| minio.min.io/v2/Tenant           | Get                     | Used to discover MinIO tenants                                                                                      |
-| v1/ConfigMap                     | Get                     | Used to obtain the CA bundle used to generate a MinIO tenant's TLS certificates (- for HTTP client cert validation) |
-| v1/Secret                        | Get                     | Used to fetch a MinIO tenant's configuration (which is stored as a secret)                                          |
-| v1/Services                      | Get                     | Used to determine a MinIO tenant's internal endpoint                                                                |
-| bfiola.dev/v1/MinioBucket        | Get, Watch, List, Patch | Required for the operator to manage minio bucket resources                                                          |
-| bfiola.dev/v1/MinioGroup         | Get, Watch, List, Patch | Required for the operator to manage minio group resources                                                           |
-| bfiola.dev/v1/MinioGroupBinding  | Get, Watch, List, Patch | Required for the operator to manage minio group membership                                                          |
-| bfiola.dev/v1/MinioPolicy        | Get, Watch, List, Patch | Required for the operator to manage minio policies                                                                  |
-| bfiola.dev/v1/MinioPolicyBinding | Get, Watch, List, Patch | Required for the operator to manage minio policy attachments                                                        |
-| bfiola.dev/v1/MinioUser          | Get, Watch, List, Patch | Required for the operator to manage minio user resources                                                            |
+| Resource                         | Verbs                    | Why                                                                                                                 |
+| -------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| minio.min.io/v2/Tenant           | Get                      | Used to discover MinIO tenants                                                                                      |
+| v1/ConfigMap                     | Get                      | Used to obtain the CA bundle used to generate a MinIO tenant's TLS certificates (- for HTTP client cert validation) |
+| v1/Secret                        | Get                      | Used to fetch a MinIO tenant's configuration (which is stored as a secret)                                          |
+| v1/Services                      | Get                      | Used to determine a MinIO tenant's internal endpoint                                                                |
+| bfiola.dev/v1/MinioBucket        | Get, Watch, List, Update | Required for the operator to manage minio bucket resources                                                          |
+| bfiola.dev/v1/MinioGroup         | Get, Watch, List, Update | Required for the operator to manage minio group resources                                                           |
+| bfiola.dev/v1/MinioGroupBinding  | Get, Watch, List, Update | Required for the operator to manage minio group membership                                                          |
+| bfiola.dev/v1/MinioPolicy        | Get, Watch, List, Update | Required for the operator to manage minio policies                                                                  |
+| bfiola.dev/v1/MinioPolicyBinding | Get, Watch, List, Update | Required for the operator to manage minio policy attachments                                                        |
+| bfiola.dev/v1/MinioUser          | Get, Watch, List, Update | Required for the operator to manage minio user resources                                                            |
 
 ## Limitations
 
