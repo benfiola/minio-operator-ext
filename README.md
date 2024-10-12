@@ -86,13 +86,13 @@ cd /workspaces/minio-operator-ext
 make install-tools
 ```
 
-### Creating a development cluster
+### Creating a development environment
 
-From the project root, run the following to create a development cluster to test the operator with:
+From the project root, run the following to create a development environment to test the operator with:
 
 ```shell
 cd /workspaces/minio-operator-ext
-make dev
+make dev-env
 ```
 
 This will:
@@ -108,7 +108,7 @@ This will:
 
 ### Run end-to-end tests
 
-With a development cluster deployed, you can run end-to-end operator tests to confirm the operator functions as expected:
+With a development environment deployed, you can run end-to-end operator tests to confirm the operator functions as expected:
 
 ```shell
 cd /workspaces/minio-operator-ext

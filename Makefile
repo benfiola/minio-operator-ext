@@ -50,8 +50,8 @@ clean: delete-minikube-cluster
 	# delete asset directory
 	rm -rf $(ASSETS)
 
-.PHONY: dev-cluster
-dev-cluster: create-minikube-cluster apply-manifests start-minikube-tunnel start-lb-hosts-manager wait-for-ready
+.PHONY: dev-env
+dev-env: create-minikube-cluster apply-manifests start-minikube-tunnel start-lb-hosts-manager wait-for-ready
 
 .PHONY: e2e-test
 e2e-test:
