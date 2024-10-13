@@ -1,6 +1,7 @@
 # NOTE: MINIO_VERSION, MC_VERSION are coupled
 ASSETS ?= $(shell pwd)/.dev
 DEV ?= $(shell pwd)/dev
+CONTROLLER_GEN_VERSION ?= 0.16.4
 HELM_VERSION ?= 3.16.1
 KUBERNETES_VERSION ?= 1.30.4
 LB_HOSTS_MANAGER_VERSION ?= 0.1.0
@@ -12,6 +13,8 @@ OS = $(shell go env GOOS)
 ARCH = $(shell go env GOARCH)
 MANIFESTS = $(shell pwd)/manifests
 
+CONTROLLER_GEN = $(ASSETS)/controller-gen
+CONTROLLER_GEN_URL = https://github.com/kubernetes-sigs/controller-tools/releases/download/v$(CONTROLLER_GEN_VERSION)/controller-gen-$(OS)-$(ARCH)
 CRDS_MANIFEST = $(ASSETS)/crds.yaml
 CRDS_MANIFEST_SRC = $(MANIFESTS)/crds.yaml
 HELM = $(ASSETS)/helm
@@ -104,12 +107,24 @@ wait-for-ready:
 	# wait for minio to be connectable
 	while true; do curl -I --insecure https://minio.default.svc > /dev/null 2>&1 && break; sleep 1; done;
 
+.PHONY: generate-code
+generate-code: $(CONTROLLER_GEN)
+	# generate deepcopy
+	$(CONTROLLER_GEN) object paths=./pkg/api/bfiola.dev/v1
+
 $(ASSETS):
 	# create .dev directory
 	mkdir -p $(ASSETS)
 
 .PHONY: install-tools
-install-tools: $(HELM) $(LB_HOSTS_MANAGER) $(KUBECTL) $(MC) $(MINIKUBE)
+install-tools: $(CONTROLLER_GEN) $(HELM) $(LB_HOSTS_MANAGER) $(KUBECTL) $(MC) $(MINIKUBE)
+
+$(CONTROLLER_GEN): | $(ASSETS)
+	# install controller-gen
+	# download
+	curl -o $(CONTROLLER_GEN) -fsSL $(CONTROLLER_GEN_URL)
+	# make executable
+	chmod +x $(CONTROLLER_GEN)
 
 $(HELM): | $(ASSETS)
 	# install helm
