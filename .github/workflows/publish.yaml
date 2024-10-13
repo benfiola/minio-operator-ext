@@ -10,6 +10,8 @@ jobs:
     permissions:
       id-token: write
       contents: write
+    env:
+      image_base: benfiola/minio-operator-ext
     environment:
       name: docker
       url: https://hub.docker.com/r/benfiola/minio-operator-ext
@@ -31,14 +33,16 @@ jobs:
         run: |
           version="$(versionctl next)"
           tag="$(versionctl convert "${version}" git)"
-          image_base="docker.io/benfiola/minio-operator-ext"
           image_tag="$(versionctl convert "${version}" docker)"
-          image="${image_base}:${image_tag}"
-          latest_image="${image_base}:latest"
+
+          image="docker.io/${{env.image_base}}:${image_tag}"
+          latest_image="docker.io/${{env.image_base}}:latest"
+
           publish_latest="0"
           if [ "${{github.ref}}" = "refs/heads/main" ]; then
             publish_latest="1"
           fi
+
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
           echo "image=${image}" >> "${GITHUB_OUTPUT}"
@@ -71,3 +75,12 @@ jobs:
               ref: 'refs/tags/${{steps.facts.outputs.tag}}',
               sha: context.sha
             })
+      - name: release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: |
+            Published docker image: `${{steps.facts.outputs.image}}`.
+          make_latest: ${{github.ref == 'refs/heads/main'}}
+          prerelease: ${{github.ref != 'refs/heads/main'}}
+          tag_name: ${{steps.facts.outputs.tag}}
+          target_commitish: ${{github.sha}}
