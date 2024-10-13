@@ -19,6 +19,10 @@ Examples of these resources can be found [here](./manifests/example-resources.ya
 
 ## Installation
 
+> [!IMPORTANT]
+> 
+> Read [this](https://github.com/benfiola/minio-operator-ext/issues/16#issuecomment-2401553200) if you are updating from version 1.X.X to version 2.X.X of the operator.
+
 Installation is a two-step process:
 
 - Deploy the [CRDs](./manifests/crds.yaml)
