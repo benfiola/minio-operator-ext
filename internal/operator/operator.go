@@ -359,6 +359,9 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 
+	success := func() (reconcile.Result, error) { return reconcile.Result{RequeueAfter: r.syncInterval}, nil }
+	failure := func(err error) (reconcile.Result, error) { return reconcile.Result{}, err }
+
 	if !b.ObjectMeta.DeletionTimestamp.IsZero() {
 		l.Info("marked for deletion")
 		if b.Status.CurrentSpec != nil {
@@ -368,38 +371,38 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 			tr := b.Status.CurrentSpec.TenantRef.SetDefaultNamespace(b.GetNamespace())
 			mtci, err := getMinioTenantClientInfo(ctx, r, tr)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 			mtc, err := mtci.GetClient(ctx)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
 			l.Info("delete minio bucket")
 			err = mtc.RemoveBucket(ctx, b.Status.CurrentSpec.Name)
 			err = ignoreMinioErrorCode(err, "NoSuchBucket")
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
 			l.Info("clear status")
 			b.Status.CurrentSpec = nil
 			err = r.Update(ctx, b)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
-			return reconcile.Result{}, nil
+			return success()
 		}
 
 		l.Info("clear finalizer")
 		controllerutil.RemoveFinalizer(b, finalizer)
 		err = r.Update(ctx, b)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
-		return reconcile.Result{}, nil
+		return success()
 	}
 
 	if !controllerutil.ContainsFinalizer(b, finalizer) {
@@ -407,10 +410,10 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 		controllerutil.AddFinalizer(b, finalizer)
 		err = r.Update(ctx, b)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
-		return reconcile.Result{}, nil
+		return success()
 	}
 
 	if b.Status.CurrentSpec != nil {
@@ -420,27 +423,27 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 		tr := b.Status.CurrentSpec.TenantRef.SetDefaultNamespace(b.GetNamespace())
 		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 		mtc, err := mtci.GetClient(ctx)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		l.Info("check if minio bucket exists")
 		be, err := mtc.BucketExists(ctx, b.Status.CurrentSpec.Name)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 		if !be {
 			l.Info("clear status (minio bucket no longer exists)")
 			b.Status.CurrentSpec = nil
 			err := r.Update(ctx, b)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
-			return reconcile.Result{}, nil
+			return success()
 		}
 	}
 
@@ -451,30 +454,30 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 		tr := b.Spec.TenantRef.SetDefaultNamespace(b.GetNamespace())
 		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 		mtc, err := mtci.GetClient(ctx)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		l.Info("create minio bucket")
 		err = mtc.MakeBucket(ctx, b.Spec.Name, minioclient.MakeBucketOptions{})
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		l.Info("set status")
 		b.Status.CurrentSpec = &b.Spec
 		err = r.Update(ctx, b)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
-		return reconcile.Result{}, nil
+		return success()
 	}
 
-	return reconcile.Result{RequeueAfter: r.syncInterval}, nil
+	return success()
 }
 
 // minioGroupReconciler reconciles [v1.MinioGroup] resources
@@ -509,6 +512,8 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 
+	success := func() (reconcile.Result, error) { return reconcile.Result{RequeueAfter: r.syncInterval}, nil }
+	failure := func(err error) (reconcile.Result, error) { return reconcile.Result{}, err }
 	if !g.ObjectMeta.DeletionTimestamp.IsZero() {
 		l.Info("marked for deletion")
 
@@ -519,11 +524,11 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 			tr := g.Status.CurrentSpec.TenantRef.SetDefaultNamespace(g.GetNamespace())
 			mtci, err := getMinioTenantClientInfo(ctx, r, tr)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 			mtac, err := mtci.GetAdminClient(ctx)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
 			l.Info("delete minio group")
@@ -533,27 +538,27 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 			})
 			err = ignoreMadminErrorCode(err, "XMinioAdminNoSuchGroup")
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
 			l.Info("clear status")
 			g.Status.CurrentSpec = nil
 			err = r.Update(ctx, g)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
-			return reconcile.Result{}, nil
+			return success()
 		}
 
 		l.Info("clear finalizer")
 		controllerutil.RemoveFinalizer(g, finalizer)
 		err = r.Update(ctx, g)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
-		return reconcile.Result{}, nil
+		return success()
 	}
 
 	if !controllerutil.ContainsFinalizer(g, finalizer) {
@@ -561,10 +566,10 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 		controllerutil.AddFinalizer(g, finalizer)
 		err = r.Update(ctx, g)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
-		return reconcile.Result{}, nil
+		return success()
 	}
 
 	if g.Status.CurrentSpec != nil {
@@ -574,11 +579,11 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 		tr := g.Status.CurrentSpec.TenantRef.SetDefaultNamespace(g.GetNamespace())
 		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 		mtac, err := mtci.GetAdminClient(ctx)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		l.Info("check if minio group exists")
@@ -588,13 +593,13 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 			g.Status.CurrentSpec = nil
 			err = r.Update(ctx, g)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
-			return reconcile.Result{}, nil
+			return success()
 		}
 		if err != nil {
-			return reconcile.Result{}, nil
+			return success()
 		}
 	}
 
@@ -605,11 +610,11 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 		tr := g.Spec.TenantRef.SetDefaultNamespace(g.GetNamespace())
 		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 		mtac, err := mtci.GetAdminClient(ctx)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		l.Info("check if minio group exists")
@@ -619,7 +624,7 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 		}
 		err = ignoreMadminErrorCode(err, "XMinioAdminNoSuchGroup")
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		l.Info("create minio group")
@@ -628,20 +633,20 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 			IsRemove: false,
 		})
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		l.Info("set status")
 		g.Status.CurrentSpec = &g.Spec
 		err = r.Update(ctx, g)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
-		return reconcile.Result{}, nil
+		return success()
 	}
 
-	return reconcile.Result{RequeueAfter: r.syncInterval}, nil
+	return success()
 }
 
 // minioGroupBindingReconciler reconciles [v1.MinioGroupBinding] resources
@@ -676,6 +681,8 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 
+	success := func() (reconcile.Result, error) { return reconcile.Result{RequeueAfter: r.syncInterval}, nil }
+	failure := func(err error) (reconcile.Result, error) { return reconcile.Result{}, err }
 	deleteGroupMember := func() error {
 		l.Info("get tenant admin client")
 		tr := gb.Status.CurrentSpec.TenantRef.SetDefaultNamespace(gb.GetNamespace())
@@ -716,20 +723,20 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 
 			err = deleteGroupMember()
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
-			return reconcile.Result{}, nil
+			return success()
 		}
 
 		l.Info("clear finalizer")
 		controllerutil.RemoveFinalizer(gb, finalizer)
 		err = r.Update(ctx, gb)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
-		return reconcile.Result{}, nil
+		return success()
 	}
 
 	if !controllerutil.ContainsFinalizer(gb, finalizer) {
@@ -737,10 +744,10 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 		controllerutil.AddFinalizer(gb, finalizer)
 		err = r.Update(ctx, gb)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
-		return reconcile.Result{}, nil
+		return success()
 	}
 
 	if gb.Status.CurrentSpec != nil {
@@ -748,16 +755,16 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 		tr := gb.Status.CurrentSpec.TenantRef.SetDefaultNamespace(gb.GetNamespace())
 		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 		mtac, err := mtci.GetAdminClient(ctx)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		gd, err := mtac.GetGroupDescription(ctx, gb.Status.CurrentSpec.Group)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		if !slices.Contains(gd.Members, gb.Status.CurrentSpec.User) {
@@ -765,20 +772,20 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 			gb.Status.CurrentSpec = nil
 			err = r.Update(ctx, gb)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
-			return reconcile.Result{}, nil
+			return success()
 		}
 
 		if !reflect.DeepEqual(*gb.Status.CurrentSpec, gb.Spec) {
 			l.Info("delete group member (status and spec differ)")
 			err = deleteGroupMember()
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
-			return reconcile.Result{}, nil
+			return success()
 		}
 	}
 
@@ -789,11 +796,11 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 		tr := gb.Spec.TenantRef.SetDefaultNamespace(gb.GetNamespace())
 		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 		mtac, err := mtci.GetAdminClient(ctx)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		l.Info("add minio group member")
@@ -803,21 +810,21 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 			IsRemove: false,
 		})
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		l.Info("set status")
 		gb.Status.CurrentSpec = &gb.Spec
 		err = r.Update(ctx, gb)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
-		return reconcile.Result{}, nil
+		return success()
 
 	}
 
-	return reconcile.Result{RequeueAfter: r.syncInterval}, nil
+	return success()
 }
 
 // minioPolicyReconciler reconciles [v1.MinioPolicy] resources
@@ -885,6 +892,9 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 
+	success := func() (reconcile.Result, error) { return reconcile.Result{RequeueAfter: r.syncInterval}, nil }
+	failure := func(err error) (reconcile.Result, error) { return reconcile.Result{}, err }
+
 	if !p.ObjectMeta.DeletionTimestamp.IsZero() {
 		l.Info("marked for deletion")
 
@@ -895,37 +905,37 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 			tr := p.Status.CurrentSpec.TenantRef.SetDefaultNamespace(p.GetNamespace())
 			mtci, err := getMinioTenantClientInfo(ctx, r, tr)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 			mtac, err := mtci.GetAdminClient(ctx)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
 			l.Info("delete minio policy")
 			err = mtac.RemoveCannedPolicy(ctx, p.Status.CurrentSpec.Name)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
 			l.Info("clear status")
 			p.Status.CurrentSpec = nil
 			err = r.Update(ctx, p)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
-			return reconcile.Result{}, nil
+			return success()
 		}
 
 		l.Info("clear finalizer")
 		controllerutil.RemoveFinalizer(p, finalizer)
 		err = r.Update(ctx, p)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
-		return reconcile.Result{}, nil
+		return success()
 	}
 
 	if !controllerutil.ContainsFinalizer(p, finalizer) {
@@ -933,10 +943,10 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 		controllerutil.AddFinalizer(p, finalizer)
 		err = r.Update(ctx, p)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
-		return reconcile.Result{}, nil
+		return success()
 	}
 
 	if p.Status.CurrentSpec != nil {
@@ -946,11 +956,11 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 		tr := p.Status.CurrentSpec.TenantRef.SetDefaultNamespace(p.GetNamespace())
 		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 		mtac, err := mtci.GetAdminClient(ctx)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		l.Info("get minio policy")
@@ -960,20 +970,20 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 			p.Status.CurrentSpec = nil
 			err = r.Update(ctx, p)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
-			return reconcile.Result{}, nil
+			return success()
 		}
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		l.Info("unmarshal minio policy")
 		mps := &v1.MinioPolicySpec{}
 		err = json.Unmarshal(mp.Policy, mps)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		if !reflect.DeepEqual(*p.Status.CurrentSpec, p.Spec) {
@@ -985,13 +995,13 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 				"version":   p.Spec.Version,
 			})
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
 			l.Info("update minio policy")
 			err = mtac.AddCannedPolicy(ctx, p.Status.CurrentSpec.Name, pd)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
 			l.Info("set status")
@@ -999,10 +1009,10 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 			p.Status.CurrentSpec.Version = p.Spec.Version
 			err = r.Update(ctx, p)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
-			return reconcile.Result{}, nil
+			return success()
 		}
 
 		if getHash(mps) != getHash(p.Status.CurrentSpec) {
@@ -1014,19 +1024,19 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 				"version":   p.Status.CurrentSpec.Version,
 			})
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
 			l.Info("update minio policy")
 			err = mtac.AddCannedPolicy(ctx, p.Status.CurrentSpec.Name, pd)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
-			return reconcile.Result{}, nil
+			return success()
 		}
 
-		return reconcile.Result{}, nil
+		return success()
 	}
 
 	if p.Status.CurrentSpec == nil {
@@ -1036,11 +1046,11 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 		tr := p.Spec.TenantRef.SetDefaultNamespace(p.GetNamespace())
 		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 		mtac, err := mtci.GetAdminClient(ctx)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		l.Info("marshal policy to json")
@@ -1049,26 +1059,26 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 			"version":   p.Spec.Version,
 		})
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		l.Info("create minio policy")
 		err = mtac.AddCannedPolicy(ctx, p.Spec.Name, pd)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		l.Info("set status")
 		p.Status.CurrentSpec = &p.Spec
 		err = r.Update(ctx, p)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
-		return reconcile.Result{}, nil
+		return success()
 	}
 
-	return reconcile.Result{RequeueAfter: r.syncInterval}, nil
+	return success()
 }
 
 // minioPolicyBindingReconciler reconciles [v1.MinioPolicyBinding] resources
@@ -1103,6 +1113,8 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 
+	success := func() (reconcile.Result, error) { return reconcile.Result{RequeueAfter: r.syncInterval}, nil }
+	failure := func(err error) (reconcile.Result, error) { return reconcile.Result{}, err }
 	detachPolicyMember := func() error {
 		l.Info("get tenant admin client")
 		tr := pb.Status.CurrentSpec.TenantRef.SetDefaultNamespace(pb.GetNamespace())
@@ -1152,20 +1164,20 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 
 			err = detachPolicyMember()
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
-			return reconcile.Result{}, nil
+			return success()
 		}
 
 		l.Info("clear finalizer")
 		controllerutil.RemoveFinalizer(pb, finalizer)
 		err = r.Update(ctx, pb)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
-		return reconcile.Result{}, nil
+		return success()
 	}
 
 	if !controllerutil.ContainsFinalizer(pb, finalizer) {
@@ -1173,10 +1185,10 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 		controllerutil.AddFinalizer(pb, finalizer)
 		err = r.Update(ctx, pb)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
-		return reconcile.Result{}, nil
+		return success()
 	}
 
 	if pb.Status.CurrentSpec != nil {
@@ -1186,21 +1198,21 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 		tr := pb.Status.CurrentSpec.TenantRef.SetDefaultNamespace(pb.GetNamespace())
 		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 		mac, err := mtci.GetAdminClient(ctx)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		if !reflect.DeepEqual(*pb.Status.CurrentSpec, pb.Spec) {
 			l.Info("detach policy member (status and spec differ)")
 			err = detachPolicyMember()
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
-			return reconcile.Result{}, nil
+			return success()
 		}
 
 		l.Info("list policy entities")
@@ -1209,11 +1221,11 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 		if ldap {
 			pes, err := mac.GetLDAPPolicyEntities(ctx, madmin.PolicyEntitiesQuery{Policy: []string{pb.Status.CurrentSpec.Policy}})
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 			ipdc, err := mac.GetIDPConfig(ctx, "ldap", "")
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 			usbdn := ""
 			for _, ipdci := range ipdc.Info {
@@ -1236,7 +1248,7 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 		} else {
 			pes, err := mac.GetPolicyEntities(ctx, madmin.PolicyEntitiesQuery{Policy: []string{pb.Status.CurrentSpec.Policy}})
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 			for _, pm := range pes.PolicyMappings {
 				if slices.Contains(pm.Groups, pb.Status.CurrentSpec.Group.Builtin) || slices.Contains(pm.Users, pb.Status.CurrentSpec.User.Builtin) {
@@ -1250,10 +1262,10 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 			pb.Status.CurrentSpec = nil
 			err = r.Update(ctx, pb)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
-			return reconcile.Result{}, nil
+			return success()
 		}
 	}
 
@@ -1264,11 +1276,11 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 		tr := pb.Spec.TenantRef.SetDefaultNamespace(pb.GetNamespace())
 		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 		mtac, err := mtci.GetAdminClient(ctx)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		l.Info("attach minio policy to identity")
@@ -1287,20 +1299,20 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 			})
 		}
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		l.Info("set status")
 		pb.Status.CurrentSpec = &pb.Spec
 		err = r.Update(ctx, pb)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
-		return reconcile.Result{}, nil
+		return success()
 	}
 
-	return reconcile.Result{RequeueAfter: r.syncInterval}, nil
+	return success()
 }
 
 // minioUserReconciler reconciles [v1.MinioUser] resources
@@ -1335,6 +1347,9 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 
+	success := func() (reconcile.Result, error) { return reconcile.Result{RequeueAfter: r.syncInterval}, nil }
+	failure := func(err error) (reconcile.Result, error) { return reconcile.Result{}, err }
+
 	if !u.ObjectMeta.DeletionTimestamp.IsZero() {
 		l.Info("marked for deletion")
 
@@ -1345,38 +1360,38 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 			tr := u.Status.CurrentSpec.TenantRef.SetDefaultNamespace(u.GetNamespace())
 			mtci, err := getMinioTenantClientInfo(ctx, r, tr)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 			mtac, err := mtci.GetAdminClient(ctx)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
 			l.Info("delete minio user")
 			err = mtac.RemoveUser(ctx, u.Status.CurrentSpec.AccessKey)
 			err = ignoreMadminErrorCode(err, "XMinioAdminNoSuchUser")
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
 			l.Info("clear status")
 			u.Status.CurrentSpec = nil
 			err = r.Update(ctx, u)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
-			return reconcile.Result{}, nil
+			return success()
 		}
 
 		l.Info("clear finalizer")
 		controllerutil.RemoveFinalizer(u, finalizer)
 		err = r.Update(ctx, u)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
-		return reconcile.Result{}, nil
+		return success()
 	}
 
 	if !controllerutil.ContainsFinalizer(u, finalizer) {
@@ -1384,10 +1399,10 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 		controllerutil.AddFinalizer(u, finalizer)
 		err = r.Update(ctx, u)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
-		return reconcile.Result{}, nil
+		return success()
 	}
 
 	if u.Status.CurrentSpec != nil {
@@ -1397,11 +1412,11 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 		tr := u.Status.CurrentSpec.TenantRef.SetDefaultNamespace(u.GetNamespace())
 		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 		mtac, err := mtci.GetAdminClient(ctx)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		l.Info("get minio user")
@@ -1411,13 +1426,13 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 			u.Status.CurrentSpec = nil
 			err = r.Update(ctx, u)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
-			return reconcile.Result{}, nil
+			return success()
 		}
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		l.Info("get secret from secret key ref")
@@ -1425,24 +1440,24 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 		us := &corev1.Secret{}
 		err = r.Get(ctx, types.NamespacedName{Name: usrr.Name, Namespace: usrr.Namespace}, us)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 		if us.GetResourceVersion() != u.Status.CurrentSecretKeyRefResourceVersion {
 			l.Info("update user (secret key ref change)")
 			usk := string(us.Data[u.Status.CurrentSpec.SecretKeyRef.Key])
 			err = mtac.AddUser(ctx, u.Status.CurrentSpec.AccessKey, usk)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
 			l.Info("set status")
 			u.Status.CurrentSecretKeyRefResourceVersion = us.GetResourceVersion()
 			err = r.Update(ctx, u)
 			if err != nil {
-				return reconcile.Result{}, err
+				return failure(err)
 			}
 
-			return reconcile.Result{}, nil
+			return success()
 		}
 	}
 
@@ -1453,11 +1468,11 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 		tr := u.Spec.TenantRef.SetDefaultNamespace(u.GetNamespace())
 		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 		mtac, err := mtci.GetAdminClient(ctx)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		l.Info("check if minio user exists")
@@ -1467,7 +1482,7 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 		}
 		err = ignoreMadminErrorCode(err, "XMinioAdminNoSuchUser")
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		l.Info("get secret from secret key ref")
@@ -1475,14 +1490,14 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 		us := &corev1.Secret{}
 		err = r.Get(ctx, types.NamespacedName{Name: usrr.Name, Namespace: usrr.Namespace}, us)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 		usk := string(us.Data[u.Spec.SecretKeyRef.Key])
 
 		l.Info("create minio user")
 		err = mtac.AddUser(ctx, u.Spec.AccessKey, usk)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
 		l.Info("set status")
@@ -1490,11 +1505,11 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 		u.Status.CurrentSecretKeyRefResourceVersion = us.GetResourceVersion()
 		err = r.Update(ctx, u)
 		if err != nil {
-			return reconcile.Result{}, err
+			return failure(err)
 		}
 
-		return reconcile.Result{}, nil
+		return success()
 	}
 
-	return reconcile.Result{RequeueAfter: r.syncInterval}, nil
+	return success()
 }
