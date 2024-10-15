@@ -588,7 +588,12 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 
 		l.Info("check if minio group exists")
 		_, err = mtac.GetGroupDescription(ctx, g.Status.CurrentSpec.Name)
-		if isMadminErrorCode(err, "XMinioAdminNoSuchGroup") {
+		e := !isMadminErrorCode(err, "XMinioAdminNoSuchGroup")
+		err = ignoreMadminErrorCode(err, "XMinioAdminNoSuchGroup")
+		if err != nil {
+			return failure(err)
+		}
+		if !e {
 			l.Info("clear status (minio group no longer exists)")
 			g.Status.CurrentSpec = nil
 			err = r.Update(ctx, g)
@@ -596,9 +601,6 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 				return failure(err)
 			}
 
-			return success()
-		}
-		if err != nil {
 			return success()
 		}
 	}
@@ -965,7 +967,12 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 
 		l.Info("get minio policy")
 		mp, err := mtac.InfoCannedPolicyV2(ctx, p.Status.CurrentSpec.Name)
-		if isMadminErrorCode(err, "XMinioAdminNoSuchPolicy") {
+		e := !isMadminErrorCode(err, "XMinioAdminNoSuchPolicy")
+		err = ignoreMadminErrorCode(err, "XMinioAdminNoSuchPolicy")
+		if err != nil {
+			return failure(err)
+		}
+		if !e {
 			l.Info("clear status (minio policy no longer exists)")
 			p.Status.CurrentSpec = nil
 			err = r.Update(ctx, p)
@@ -974,9 +981,6 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 			}
 
 			return success()
-		}
-		if err != nil {
-			return failure(err)
 		}
 
 		l.Info("unmarshal minio policy")
@@ -1421,7 +1425,12 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 
 		l.Info("get minio user")
 		_, err = mtac.GetUserInfo(ctx, u.Status.CurrentSpec.AccessKey)
-		if isMadminErrorCode(err, "XMinioAdminNoSuchUser") {
+		e := !isMadminErrorCode(err, "XMinioAdminNoSuchUser")
+		err = ignoreMadminErrorCode(err, "XMinioAdminNoSuchUser")
+		if err != nil {
+			return failure(err)
+		}
+		if !e {
 			l.Info("clear status (minio user no longer exists)")
 			u.Status.CurrentSpec = nil
 			err = r.Update(ctx, u)
@@ -1430,9 +1439,6 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 			}
 
 			return success()
-		}
-		if err != nil {
-			return failure(err)
 		}
 
 		l.Info("get secret from secret key ref")
