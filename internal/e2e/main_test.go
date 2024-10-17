@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"reflect"
@@ -48,7 +49,7 @@ var (
 	testObjects = []client.Object{}
 	bucket      = CreateTestObject(&v1.MinioBucket{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "bucket"},
-		Spec:       v1.MinioBucketSpec{Name: "bucket", TenantRef: v1.ResourceRef{Name: "tenant"}},
+		Spec:       v1.MinioBucketSpec{DeletionPolicy: v1.MinioBucketDeletionPolicyIfEmpty, Name: "bucket", TenantRef: v1.ResourceRef{Name: "tenant"}},
 	})
 	builtinGroup = CreateTestObject(&v1.MinioGroup{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "builtin-group"},
@@ -70,10 +71,6 @@ var (
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "builtin-group-to-builtin-user"},
 		Spec:       v1.MinioGroupBindingSpec{Group: builtinGroup.Spec.Name, User: builtinUser.Spec.AccessKey, TenantRef: v1.ResourceRef{Name: "tenant"}},
 	})
-	builtinGroupToBuiltinUser2 = CreateTestObject(&v1.MinioGroupBinding{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "builtin-group-to-builtin-user2"},
-		Spec:       v1.MinioGroupBindingSpec{Group: builtinGroup.Spec.Name, User: builtinUser2.Spec.AccessKey, TenantRef: v1.ResourceRef{Name: "tenant"}},
-	})
 	policy = CreateTestObject(&v1.MinioPolicy{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "policy"},
 		Spec:       v1.MinioPolicySpec{Statement: []v1.MinioPolicyStatement{{Action: []string{"s3:*"}, Effect: "Allow", Resource: []string{"arn:aws:s3:::*"}}}, Name: "policy", TenantRef: v1.ResourceRef{Name: "tenant"}, Version: "2012-10-17"},
@@ -85,10 +82,6 @@ var (
 	policyToBuiltinUser = CreateTestObject(&v1.MinioPolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "policy-to-builtin-user"},
 		Spec:       v1.MinioPolicyBindingSpec{User: v1.MinioPolicyBindingIdentity{Builtin: builtinUser.Spec.AccessKey}, Policy: policy.Spec.Name, TenantRef: v1.ResourceRef{Name: "tenant"}},
-	})
-	policyToBuiltinUser2 = CreateTestObject(&v1.MinioPolicyBinding{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "policy-to-builtin-user2"},
-		Spec:       v1.MinioPolicyBindingSpec{User: v1.MinioPolicyBindingIdentity{Builtin: builtinUser2.Spec.AccessKey}, Policy: policy.Spec.Name, TenantRef: v1.ResourceRef{Name: "tenant"}},
 	})
 	policyToLdapGroup = CreateTestObject(&v1.MinioPolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "policy-to-ldap-group"},
@@ -171,7 +164,7 @@ func Setup(t testing.TB) TestData {
 	ic := ics[0]
 	le := ic.Enabled
 	// remove resources
-	err = m.RemoveBucket(ctx, bucket.Spec.Name)
+	err = m.RemoveBucketWithOptions(ctx, bucket.Spec.Name, minio.RemoveBucketOptions{ForceDelete: true})
 	if merr, ok := err.(minio.ErrorResponse); ok && merr.Code == "NoSuchBucket" {
 		err = nil
 	}
@@ -258,14 +251,40 @@ func SetMinioLDAPIdentityProvider(td TestData) {
 	}
 }
 
+// RunOperatorUntilOptions holds options for [RunOperatorUntil]
+type RunOperatorUntilOptions struct {
+	operator *operator.Main
+}
+
+// RunOperatorUntilOpt defines a function that configures a [RunOperatorUntilOptions] struct
+type RunOperatorUntilOpt func(d *RunOperatorUntilOptions)
+
+// Configures [RunOperatorUntil] to use a pre-constructed operator
+// See: [WaitForReconcilerError]
+func RunWithOperator(o *operator.Main) RunOperatorUntilOpt {
+	return func(d *RunOperatorUntilOptions) {
+		d.operator = o
+	}
+}
+
 // Runs operator until provided function returns [StopIteration].
-func RunOperatorUntil(td TestData, rof func() error) {
+func RunOperatorUntil(td TestData, rof func() error, ofs ...RunOperatorUntilOpt) {
 	td.T.Helper()
 
-	// create operator
-	l := slogt.New(td.T)
-	o, err := operator.New(&operator.Opts{KubeConfig: td.KubeConfig, Logger: l})
-	td.Require.NoError(err, "create operator")
+	// obtain options
+	opts := &RunOperatorUntilOptions{}
+	for _, of := range ofs {
+		of(opts)
+	}
+
+	o := opts.operator
+	var err error
+	if o == nil {
+		// create operator if not defined
+		l := slogt.New(td.T)
+		o, err = operator.New(&operator.Opts{KubeConfig: td.KubeConfig, Logger: l})
+		td.Require.NoError(err, "create operator")
+	}
 
 	// start operator in background
 	var oerr error
@@ -358,6 +377,87 @@ func WaitForStableResourceVersion(td TestData, o client.Object) {
 	td.Require.True(c < t, "resource change threshold reached")
 }
 
+// SlogRecordCollector implements [slog.Handler] - collecting emitted records and delegating to a wrapped [slog.Handler]
+// See: [WaitForReconcilerError]
+type SlogRecordCollector struct {
+	Records *[]slog.Record
+	Handler slog.Handler
+}
+
+// Part of the [SlogRecordCollector] implementation of [slog.Handler]
+func (src *SlogRecordCollector) Enabled(ctx context.Context, lvl slog.Level) bool {
+	return src.Handler.Enabled(ctx, lvl)
+}
+
+// Part of the [SlogRecordCollector] implementation of [slog.Handler]
+func (src *SlogRecordCollector) Handle(ctx context.Context, r slog.Record) error {
+	rs := append(*src.Records, r)
+	*src.Records = rs
+	return src.Handler.Handle(ctx, r)
+}
+
+// Part of the [SlogRecordCollector] implementation of [slog.Handler]
+func (src *SlogRecordCollector) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &SlogRecordCollector{Records: src.Records, Handler: src.Handler.WithAttrs(attrs)}
+}
+
+// Part of the [SlogRecordCollector] implementation of [slog.Handler]
+func (src *SlogRecordCollector) WithGroup(name string) slog.Handler {
+	return &SlogRecordCollector{Records: src.Records, Handler: src.Handler.WithGroup(name)}
+}
+
+// Collects reconciler errors and passes them to the callback - allowing unit tests to test for certain failures.
+// Accomplishes this by attaching a handler to the operator that collects log records and processes them for an 'err' attribute.
+func WaitForReconcilerError(td TestData, cb func(err error) error) {
+	rs := []slog.Record{}
+	prs := &rs
+
+	l := slogt.New(td.T, slogt.Text(), func(b *slogt.Bridge) {
+		b.Handler = &SlogRecordCollector{Records: prs, Handler: b.Handler}
+	})
+	o, err := operator.New(&operator.Opts{KubeConfig: td.KubeConfig, Logger: l})
+	td.Require.NoError(err, "create operator")
+
+	i := 0
+	RunOperatorUntil(td, func() error {
+		for i < len(*prs) {
+			r := (*prs)[i]
+			i = i + 1
+
+			if r.Message != "Reconciler error" {
+				// not a reconciler error - ignore
+				continue
+			}
+
+			// find the error as an attribute of the record
+			var lerr error
+			r.Attrs(func(a slog.Attr) bool {
+				if a.Key != "err" {
+					// not an error attribute - ignore
+					return true
+				}
+				aerr, ok := a.Value.Any().(error)
+				if !ok {
+					return true
+				}
+				lerr = aerr
+				return false
+			})
+			if lerr == nil {
+				// err was not found
+				continue
+			}
+
+			// invoke the callback with the found error
+			err := cb(lerr)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}, RunWithOperator(o))
+}
+
 func TestMinioBucket(t *testing.T) {
 	createBucket := func(td TestData) *v1.MinioBucket {
 		td.T.Helper()
@@ -415,7 +515,7 @@ func TestMinioBucket(t *testing.T) {
 		b := createBucket(td)
 		waitForReconcile(td, b)
 
-		err := td.Minio.RemoveBucket(td.Ctx, b.Spec.Name)
+		err := td.Minio.RemoveBucketWithOptions(td.Ctx, b.Spec.Name, minio.RemoveBucketOptions{ForceDelete: true})
 		td.Require.NoError(err, "delete bucket from minio")
 
 		err = td.Kube.Delete(td.Ctx, b)
@@ -429,7 +529,7 @@ func TestMinioBucket(t *testing.T) {
 		b := createBucket(td)
 		waitForReconcile(td, b)
 
-		err := td.Minio.RemoveBucket(td.Ctx, b.Spec.Name)
+		err := td.Minio.RemoveBucketWithOptions(td.Ctx, b.Spec.Name, minio.RemoveBucketOptions{ForceDelete: true})
 		td.Require.NoError(err, "delete minio bucket resource")
 
 		RunOperatorUntil(td, func() error {
@@ -449,6 +549,60 @@ func TestMinioBucket(t *testing.T) {
 		waitForReconcile(td, b)
 
 		WaitForStableResourceVersion(td, b)
+	})
+
+	t.Run("does not force delete bucket if deletion policy IfEmpty", func(t *testing.T) {
+		td := Setup(t)
+
+		b := createBucket(td)
+		waitForReconcile(td, b)
+
+		data := "hello world"
+		_, err := td.Minio.PutObject(td.Ctx, b.Spec.Name, "testing-object", strings.NewReader(data), int64(len(data)), minio.PutObjectOptions{})
+		td.Require.NoError(err, "put data in minio bucket")
+
+		err = td.Kube.Delete(td.Ctx, b)
+		td.Require.NoError(err, "delete bucket object")
+
+		WaitForReconcilerError(td, func(err error) error {
+			merr, ok := err.(minio.ErrorResponse)
+			if !ok {
+				return nil
+			}
+			if merr.Code != "BucketNotEmpty" {
+				return nil
+			}
+			if merr.BucketName != b.Spec.Name {
+				return nil
+			}
+			return StopIteration{}
+		})
+
+		err = td.Minio.RemoveObject(td.Ctx, b.Spec.Name, "testing-object", minio.RemoveObjectOptions{})
+		td.Require.NoError(err, "remove data from minio bucket")
+
+		WaitForDelete(td, b)
+	})
+
+	t.Run("force delete bucket if deletion policy Always", func(t *testing.T) {
+		td := Setup(t)
+
+		b := createBucket(td)
+		waitForReconcile(td, b)
+
+		b.Spec.DeletionPolicy = v1.MinioBucketDeletionPolicyAlways
+		err := td.Kube.Update(td.Ctx, b)
+		td.Require.NoError(err, "update bucket object deletion policy")
+		waitForReconcile(td, b)
+
+		data := "hello world"
+		_, err = td.Minio.PutObject(td.Ctx, b.Spec.Name, "testing-object", strings.NewReader(data), int64(len(data)), minio.PutObjectOptions{})
+		td.Require.NoError(err, "put data in minio bucket")
+
+		err = td.Kube.Delete(td.Ctx, b)
+		td.Require.NoError(err, "delete bucket object")
+
+		WaitForDelete(td, b)
 	})
 }
 

@@ -379,7 +379,11 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 			}
 
 			l.Info("delete minio bucket")
-			err = mtc.RemoveBucket(ctx, b.Status.CurrentSpec.Name)
+			dp := b.Status.CurrentSpec.DeletionPolicy
+			if b.Status.CurrentSpec.DeletionPolicy == "" {
+				dp = v1.MinioBucketDeletionPolicyIfEmpty
+			}
+			err = mtc.RemoveBucketWithOptions(ctx, b.Status.CurrentSpec.Name, minioclient.RemoveBucketOptions{ForceDelete: dp == v1.MinioBucketDeletionPolicyAlways})
 			err = ignoreMinioErrorCode(err, "NoSuchBucket")
 			if err != nil {
 				return failure(err)
@@ -439,6 +443,19 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 			l.Info("clear status (minio bucket no longer exists)")
 			b.Status.CurrentSpec = nil
 			err := r.Update(ctx, b)
+			if err != nil {
+				return failure(err)
+			}
+
+			return success()
+		}
+
+		if b.Status.CurrentSpec.DeletionPolicy != b.Spec.DeletionPolicy {
+			l.Info("update bucket (deletion policy changed)")
+
+			l.Info("set status")
+			b.Status.CurrentSpec.DeletionPolicy = b.Spec.DeletionPolicy
+			err = r.Update(ctx, b)
 			if err != nil {
 				return failure(err)
 			}
@@ -983,15 +1000,8 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 			return success()
 		}
 
-		l.Info("unmarshal minio policy")
-		mps := &v1.MinioPolicySpec{}
-		err = json.Unmarshal(mp.Policy, mps)
-		if err != nil {
-			return failure(err)
-		}
-
-		if !reflect.DeepEqual(*p.Status.CurrentSpec, p.Spec) {
-			l.Info("update policy (status and spec differ)")
+		if !reflect.DeepEqual(p.Status.CurrentSpec.Version, p.Spec.Version) || !reflect.DeepEqual(p.Status.CurrentSpec.Statement, p.Spec.Statement) {
+			l.Info("update policy (statement or version changed)")
 
 			l.Info("marshal policy")
 			pd, err := json.Marshal(map[string]any{
@@ -1017,6 +1027,13 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 			}
 
 			return success()
+		}
+
+		l.Info("unmarshal minio policy")
+		mps := &v1.MinioPolicySpec{}
+		err = json.Unmarshal(mp.Policy, mps)
+		if err != nil {
+			return failure(err)
 		}
 
 		if getHash(mps) != getHash(p.Status.CurrentSpec) {
