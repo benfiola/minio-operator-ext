@@ -6,6 +6,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	MinioBucketDeletionPolicyAlways  = "Always"
+	MinioBucketDeletionPolicyIfEmpty = "IfEmpty"
+)
+
 // +genclient
 // +k8s:deepcopy-gen=true
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -21,8 +26,9 @@ type MinioBucket struct {
 
 // MinioBucketSpec defines the desired state of MinioBucket
 type MinioBucketSpec struct {
-	Name      string      `json:"name"`
-	TenantRef ResourceRef `json:"tenantRef"`
+	DeletionPolicy string      `json:"deletionPolicy"`
+	Name           string      `json:"name"`
+	TenantRef      ResourceRef `json:"tenantRef"`
 }
 
 // MinioBucketStatus defines the current state of MinioBucket

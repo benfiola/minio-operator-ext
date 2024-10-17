@@ -15,6 +15,12 @@ spec:
             spec:
               type: object
               properties:
+                deletionPolicy:
+                  type: string
+                  enum:
+                    - IfEmpty
+                    - Always
+                  default: IfEmpty
                 name:
                   type: string
                 tenantRef:
