@@ -203,3 +203,11 @@ $(OPENLDAP_MANIFEST): $(KUBECTL) | $(ASSETS)
 generate-helm-readme:
 	cd chart
 	helm-docs
+
+.PHONY: helm-install
+helm-install:
+	$(HELM) install -n minio minio-operator-ext ./chart
+
+.PHONY: helm-uninstall
+helm-uninstall:
+	$(HELM) uninstall -n minio minio-operator-ext
