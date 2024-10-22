@@ -196,3 +196,10 @@ $(MINIO_TENANT_MANIFEST): $(KUBECTL) $(HELM) | $(ASSETS)
 $(OPENLDAP_MANIFEST): $(KUBECTL) | $(ASSETS)
 	# generate openldap manifest
 	$(KUSTOMIZE_CMD) $(OPENLDAP_MANIFEST_SRC) > $(OPENLDAP_MANIFEST)
+
+# HELM CHART
+
+.PHONY: generate-helm-readme
+generate-helm-readme:
+	cd chart
+	helm-docs

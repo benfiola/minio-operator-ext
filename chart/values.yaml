@@ -1,0 +1,99 @@
+---
+# Default values for minio-operator-ext.
+
+# -- How many copies of the operator should be deployed.
+# More than 1 has not been tested.
+replicaCount: 1
+
+image:
+  # -- Where to pull the container image from
+  repository: docker.io/benfiola/minio-operator-ext
+  # -- This sets the pull policy for images.
+  pullPolicy: IfNotPresent
+  # -- Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+# -- This is for the secretes for pulling an image from a private repository more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
+imagePullSecrets: []
+# -- This is to override the chart name.
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # -- Specifies whether a service account should be created
+  create: true
+  # -- Automatically mount a ServiceAccount's API credentials?
+  automount: true
+  # -- Annotations to add to the service account
+  annotations: {}
+  # -- The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+rbac:
+  # -- Specifies whether a ClusterRole and ClusterRoleBinding should be created
+  create: true
+  # -- The name of the ClusterRole and ClusterRoleBinding to create.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# -- This is for setting Kubernetes Annotations to a Pod.
+podAnnotations: {}
+# -- This is for setting Kubernetes Labels to a Pod.
+podLabels: {}
+
+# -- Pod-level security context.
+podSecurityContext: {}
+  # fsGroup: 2000
+
+# -- Deployment-wide security context.
+securityContext:
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65534
+
+# -- Apply limits to the amount of resources allocated to the operator
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+# -- This is to setup the liveness probe
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8888
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  failureThreshold: 5
+  successThreshold: 1
+  timeoutSeconds: 5
+# -- This is to setup the readiness probe
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: 8888
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  failureThreshold: 5
+  successThreshold: 1
+  timeoutSeconds: 5
+
+# -- Limit the operator to running on specific nodes.
+nodeSelector: {}
+
+# -- Allow the operator to run even when it normally wouldn't.
+tolerations: []
+
+# -- Specify preferences for where the operator should be scheduled.
+affinity: {}
