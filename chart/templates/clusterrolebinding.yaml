@@ -13,4 +13,5 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: {{ include "minio-operator-ext.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
 {{- end }}
