@@ -110,9 +110,11 @@ generate: $(CONTROLLER_GEN)
 	# generate deepcopy
 	$(CONTROLLER_GEN) object paths=./...
 	# generate crds
-	$(CONTROLLER_GEN) crd paths=./... output:stdout > ./manifests/crds.yaml
+	$(CONTROLLER_GEN) crd paths=./... output:stdout > ./charts/crds/templates/crds.yaml
 	# generate rbac
 	$(CONTROLLER_GEN) rbac:roleName=minio-operator-ext paths=./... output:stdout > ./manifests/rbac.yaml
+	# generate chart readmes
+	helm-docs
 
 $(ASSETS):
 	# create .dev directory
@@ -197,3 +199,14 @@ $(MINIO_TENANT_MANIFEST): $(KUBECTL) $(HELM) | $(ASSETS)
 $(OPENLDAP_MANIFEST): $(KUBECTL) | $(ASSETS)
 	# generate openldap manifest
 	$(KUSTOMIZE_CMD) $(OPENLDAP_MANIFEST_SRC) > $(OPENLDAP_MANIFEST)
+
+# HELM CHART
+
+.PHONY: helm-install
+helm-install:
+	$(HELM) install -n minio minio-operator-ext ./charts/crds
+	$(HELM) install -n minio minio-operator-ext ./charts/operator
+
+.PHONY: helm-uninstall
+helm-uninstall:
+	$(HELM) uninstall -n minio minio-operator-ext

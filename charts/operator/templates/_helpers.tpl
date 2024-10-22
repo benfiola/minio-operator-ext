@@ -60,3 +60,10 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Create the name of the ClusterRole to use
+*/}}
+{{- define "operator.clusterRoleName" -}}
+{{- default (include "operator.fullname" .) .Values.rbac.name }}
+{{- end }}
