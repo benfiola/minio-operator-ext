@@ -196,3 +196,18 @@ $(MINIO_TENANT_MANIFEST): $(KUBECTL) $(HELM) | $(ASSETS)
 $(OPENLDAP_MANIFEST): $(KUBECTL) | $(ASSETS)
 	# generate openldap manifest
 	$(KUSTOMIZE_CMD) $(OPENLDAP_MANIFEST_SRC) > $(OPENLDAP_MANIFEST)
+
+# HELM CHART
+
+.PHONY: generate-helm-readme
+generate-helm-readme:
+	cd chart
+	helm-docs
+
+.PHONY: helm-install
+helm-install:
+	$(HELM) install -n minio minio-operator-ext ./chart
+
+.PHONY: helm-uninstall
+helm-uninstall:
+	$(HELM) uninstall -n minio minio-operator-ext

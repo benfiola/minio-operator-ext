@@ -1,0 +1,41 @@
+{{- if .Values.rbac.create -}}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "minio-operator-ext.clusterRoleName" . }}
+  labels:
+    {{- include "minio-operator-ext.labels" . | nindent 4 }}
+rules:
+  # Load details from configmaps and secrets
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+      - secrets
+      - services
+    verbs:
+      - get
+  # Find information about MinIO Operator Tenants
+  - apiGroups:
+      - minio.min.io
+    resources:
+      - tenants
+    verbs:
+      - get
+  # Be able to maniuplate all of the new CRDs
+  - apiGroups:
+      - bfiola.dev
+    resources:
+      - miniousers
+      - miniobuckets
+      - miniogroups
+      - miniogroupbindings
+      - miniopolicies
+      - miniopolicybindings
+    verbs:
+      - get
+      - watch
+      - list
+      - update
+{{- end }}
