@@ -7,7 +7,7 @@ ADD go.mod go.mod
 ADD go.sum go.sum
 RUN CGO_ENABLED=0 go build cmd/operator/operator.go
 
-FROM scratch AS final
+FROM gcr.io/distroless/static-debian12:nonroot AS final
 COPY --from=builder /app/operator /operator
 ENTRYPOINT ["/operator"]
 CMD ["run"]
