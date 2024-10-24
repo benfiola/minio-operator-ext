@@ -14,13 +14,17 @@ const (
 // +genclient
 // +k8s:deepcopy-gen=true
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:printcolumn:name="Tenant Namespace",type=string,description="Tenant Namespace",JSONPath=`.status.currentSpec.tenantRef.namespace`
+// +kubebuilder:printcolumn:name="Tenant Name",type=string,description="Tenant Name",JSONPath=`.status.currentSpec.tenantRef.name`
+// +kubebuilder:printcolumn:name="Name",type=string,description="Name",JSONPath=`.status.currentSpec.name`
 
 // MinioBucket defines a MinIO tenant bucket.
 type MinioBucket struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   MinioBucketSpec   `json:"spec"`
+	Spec MinioBucketSpec `json:"spec"`
+	// +kubebuilder:pruning:PreserveUnknownFields
 	Status MinioBucketStatus `json:"status,omitempty"`
 }
 

@@ -188,6 +188,11 @@ type minioTenantClientInfo struct {
 	Secure    bool
 }
 
+// +kubebuilder:rbac:groups=core,resources=services,verbs=get
+// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get
+// +kubebuilder:rbac:groups=minio.min.io,resources=tenants,verbs=get
+
 // Returns [minioTenantClientInfo] for a [miniov2.Tenant] referenced by [v1.ResourceRef].
 // Returns an error if unable to fetch tenant information.
 func getMinioTenantClientInfo(ctx context.Context, c client.Client, rr v1.ResourceRef) (*minioTenantClientInfo, error) {
@@ -346,6 +351,8 @@ func (r *minioBucketReconciler) register(m manager.Manager) error {
 	r.logger = ctrl.GetLogger()
 	return nil
 }
+
+// +kubebuilder:rbac:groups=bfiola.dev,resources=miniobuckets,verbs=get;list;update;watch
 
 // Reconciles a [reconcile.Request] associated with a [v1.MinioBucket].
 // Returns a error if reconciliation fails.
@@ -517,6 +524,8 @@ func (r *minioGroupReconciler) register(m manager.Manager) error {
 	return nil
 }
 
+// +kubebuilder:rbac:groups=bfiola.dev,resources=miniogroups,verbs=get;list;update;watch
+
 // Reconciles a [reconcile.Request] associated with a [v1.MinioGroup].
 // Returns a error if reconciliation fails.
 func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
@@ -687,6 +696,8 @@ func (r *minioGroupBindingReconciler) register(m manager.Manager) error {
 	r.logger = ctrl.GetLogger()
 	return nil
 }
+
+// +kubebuilder:rbac:groups=bfiola.dev,resources=miniogroupbindings,verbs=get;list;update;watch
 
 // Reconciles a [reconcile.Request] associated with a [v1.MinioGroupBinding].
 // Returns a error if reconciliation fails.
@@ -898,6 +909,8 @@ func getHash(o interface{}) string {
 	h := hw.Sum(nil)
 	return string(h)
 }
+
+// +kubebuilder:rbac:groups=bfiola.dev,resources=miniopolicies,verbs=get;list;update;watch
 
 // Reconciles a [reconcile.Request] associated with a [v1.MinioPolicy].
 // Returns a error if reconciliation fails.
@@ -1121,6 +1134,8 @@ func (r *minioPolicyBindingReconciler) register(m manager.Manager) error {
 	r.logger = ctrl.GetLogger()
 	return nil
 }
+
+// +kubebuilder:rbac:groups=bfiola.dev,resources=miniopolicybindings,verbs=get;list;update;watch
 
 // Reconciles a [reconcile.Request] associated with a [v1.MinioPolicyBinding].
 // Returns a error if reconciliation fails.
@@ -1355,6 +1370,9 @@ func (r *minioUserReconciler) register(m manager.Manager) error {
 	r.logger = ctrl.GetLogger()
 	return nil
 }
+
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get
+// +kubebuilder:rbac:groups=bfiola.dev,resources=miniousers,verbs=get;list;update;watch
 
 // Reconciles a [reconcile.Request] associated with a [v1.MinioUser].
 // Returns a error if reconciliation fails.

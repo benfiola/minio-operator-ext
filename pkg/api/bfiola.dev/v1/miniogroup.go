@@ -7,13 +7,17 @@ import (
 // +genclient
 // +k8s:deepcopy-gen=true
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:printcolumn:name="Tenant Namespace",type=string,description="Tenant Namespace",JSONPath=`.status.currentSpec.tenantRef.namespace`
+// +kubebuilder:printcolumn:name="Tenant Name",type=string,description="Tenant Name",JSONPath=`.status.currentSpec.tenantRef.name`
+// +kubebuilder:printcolumn:name="Name",type=string,description="Name",JSONPath=`.status.currentSpec.name`
 
 // MinioGroup defines a MinIO builtin group identity.
 type MinioGroup struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   MinioGroupSpec   `json:"spec"`
+	Spec MinioGroupSpec `json:"spec"`
+	// +kubebuilder:pruning:PreserveUnknownFields
 	Status MinioGroupStatus `json:"status,omitempty"`
 }
 
