@@ -4,16 +4,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-
-	group "github.com/benfiola/minio-operator-ext/pkg/api/bfiola.dev"
 )
 
-const (
-	Version = "v1"
-)
+// +groupName=bfiola.dev
 
 // SchemeGroupVersion is group version used to register these objects
-var SchemeGroupVersion = schema.GroupVersion{Group: group.GroupName, Version: Version}
+var SchemeGroupVersion = schema.GroupVersion{Group: "bfiola.dev", Version: "v1"}
 
 // Kind takes an unqualified kind and returns back a Group qualified GroupKind
 func Kind(kind string) schema.GroupKind {

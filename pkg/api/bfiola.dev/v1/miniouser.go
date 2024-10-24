@@ -7,13 +7,17 @@ import (
 // +genclient
 // +k8s:deepcopy-gen=true
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:printcolumn:name="Tenant Namespace",type=string,description="Tenant Namespace",JSONPath=`.status.currentSpec.tenantRef.namespace`
+// +kubebuilder:printcolumn:name="Tenant Name",type=string,description="Tenant Name",JSONPath=`.status.currentSpec.tenantRef.name`
+// +kubebuilder:printcolumn:name="Access Key",type=string,description="Access Key",JSONPath=`.status.currentSpec.accessKey`
 
 // MinioUser defines a MinIO builtin user identity.
 type MinioUser struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   MinioUserSpec   `json:"spec"`
+	Spec MinioUserSpec `json:"spec"`
+	// +kubebuilder:pruning:PreserveUnknownFields
 	Status MinioUserStatus `json:"status,omitempty"`
 }
 

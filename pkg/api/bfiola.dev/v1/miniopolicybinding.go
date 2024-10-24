@@ -7,13 +7,19 @@ import (
 // +genclient
 // +k8s:deepcopy-gen=true
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:printcolumn:name="Tenant Namespace",type=string,description="Tenant Namespace",JSONPath=`.status.currentSpec.tenantRef.namespace`
+// +kubebuilder:printcolumn:name="Tenant Name",type=string,description="Tenant Name",JSONPath=`.status.currentSpec.tenantRef.name`
+// +kubebuilder:printcolumn:name="Policy",type=string,description="Policy",JSONPath=`.status.currentSpec.policy`
+// +kubebuilder:printcolumn:name="User",type=string,description="User",JSONPath=`.status.currentSpec.user`
+// +kubebuilder:printcolumn:name="Group",type=string,description="Group",JSONPath=`.status.currentSpec.group`
 
 // MinioPolicyBinding attaches a MinIO identity to a MinIO policy
 type MinioPolicyBinding struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   MinioPolicyBindingSpec   `json:"spec"`
+	Spec MinioPolicyBindingSpec `json:"spec"`
+	// +kubebuilder:pruning:PreserveUnknownFields
 	Status MinioPolicyBindingStatus `json:"status,omitempty"`
 }
 

@@ -105,10 +105,14 @@ wait-for-ready:
 	# wait for minio to be connectable
 	while true; do curl --max-time 2 -I --insecure https://minio.default.svc > /dev/null 2>&1 && break; sleep 1; done;
 
-.PHONY: generate-code
-generate-code: $(CONTROLLER_GEN)
+.PHONY: generate
+generate: $(CONTROLLER_GEN)
 	# generate deepcopy
-	$(CONTROLLER_GEN) object paths=./pkg/api/bfiola.dev/v1
+	$(CONTROLLER_GEN) object paths=./...
+	# generate crds
+	$(CONTROLLER_GEN) crd paths=./... output:stdout > ./manifests/crds.yaml
+	# generate rbac
+	$(CONTROLLER_GEN) rbac:roleName=minio-operator-ext paths=./... output:stdout > ./manifests/rbac.yaml
 
 $(ASSETS):
 	# create .dev directory
@@ -177,9 +181,6 @@ apply-manifests: $(CRDS_MANIFEST) $(KUBECTL) $(MINIO_OPERATOR_MANIFEST) $(MINIO_
 	$(KUBECTL_CMD) apply -f $(OPENLDAP_MANIFEST)
 	# deploy crds
 	$(KUBECTL_CMD) apply -f $(CRDS_MANIFEST)
-
-.PHONY: generate-manifests
-generate-manifests: $(CRDS_MANIFEST) $(MINIO_OPERATOR_MANIFEST) $(MINIO_TENANT_MANIFEST) $(OPENLDAP_MANIFEST)
 
 $(CRDS_MANIFEST): | $(ASSETS)
 	# copy crds manifest
