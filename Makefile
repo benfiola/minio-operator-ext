@@ -103,7 +103,7 @@ start-minikube-tunnel: $(LB_HOSTS_MANAGER)
 .PHONY: wait-for-ready
 wait-for-ready:
 	# wait for minio to be connectable
-	while true; do curl -I --insecure https://minio.default.svc > /dev/null 2>&1 && break; sleep 1; done;
+	while true; do curl --max-time 2 -I --insecure https://minio.default.svc > /dev/null 2>&1 && break; sleep 1; done;
 
 .PHONY: generate-code
 generate-code: $(CONTROLLER_GEN)
