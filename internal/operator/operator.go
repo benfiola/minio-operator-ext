@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -126,11 +127,13 @@ func NewOperator(o *OperatorOpts) (*operator, error) {
 		return nil, err
 	}
 
+	lfsl := logr.FromSlogHandler(l.Handler())
+	log.SetLogger(lfsl)
 	m, err := manager.New(c, manager.Options{
 		Client:                 client.Options{Cache: &client.CacheOptions{DisableFor: []client.Object{&corev1.ConfigMap{}, &corev1.Secret{}, &corev1.Service{}, &miniov2.Tenant{}}}},
 		Controller:             config.Controller{SkipNameValidation: ptr(true)},
 		HealthProbeBindAddress: ":8888",
-		Logger:                 logr.FromSlogHandler(l.Handler()),
+		Logger:                 lfsl,
 		Scheme:                 s,
 	})
 	if err != nil {
@@ -731,6 +734,7 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 			Members:  []string{gb.Status.CurrentSpec.User},
 			IsRemove: true,
 		})
+		err = ignoreMadminErrorCode(err, "XMinioAdminNoSuchUser")
 		if err != nil {
 			return err
 		}
@@ -1178,6 +1182,8 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 				User:     pb.Status.CurrentSpec.User.Builtin,
 			})
 		}
+		err = ignoreMadminErrorCode(err, "XMinioAdminNoSuchUser")
+		err = ignoreMadminErrorCode(err, "XMinioAdminNoSuchGroup")
 		if err != nil {
 			return err
 		}

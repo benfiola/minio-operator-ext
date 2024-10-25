@@ -157,12 +157,6 @@ func Setup(t testing.TB) TestData {
 	require.NoError(err, "create minio admin client")
 	ma.SetCustomTransport(ht)
 
-	// get identity provider to determine how to detach identities from policies
-	// NOTE: do not modify identity provider until identities are detached from policies
-	ics, err := ma.ListIDPConfig(ctx, "ldap")
-	require.NoError(err, "list minio identity providers config")
-	ic := ics[0]
-	le := ic.Enabled
 	// remove resources
 	err = m.RemoveBucketWithOptions(ctx, bucket.Spec.Name, minio.RemoveBucketOptions{ForceDelete: true})
 	if merr, ok := err.(minio.ErrorResponse); ok && merr.Code == "NoSuchBucket" {
@@ -174,32 +168,34 @@ func Setup(t testing.TB) TestData {
 		err = nil
 	}
 	// cannot delete policies until all identities are detached
-	var pes madmin.PolicyEntitiesResult
-	if le {
-		pes, err = ma.GetLDAPPolicyEntities(ctx, madmin.PolicyEntitiesQuery{Policy: []string{policy.Spec.Name}})
-	} else {
-		pes, err = ma.GetPolicyEntities(ctx, madmin.PolicyEntitiesQuery{Policy: []string{policy.Spec.Name}})
+	lpes, err := ma.GetLDAPPolicyEntities(ctx, madmin.PolicyEntitiesQuery{Policy: []string{policy.Spec.Name}})
+	if merr, ok := err.(madmin.ErrorResponse); ok && (merr.Code == "XMinioAdminNoSuchPolicy" || merr.Code == "XMinioIAMActionNotAllowed") {
+		err = nil
 	}
+	require.NoError(err, "list ldap entities for test minio policy")
+	pes, err := ma.GetPolicyEntities(ctx, madmin.PolicyEntitiesQuery{Policy: []string{policy.Spec.Name}})
 	if merr, ok := err.(madmin.ErrorResponse); ok && merr.Code == "XMinioAdminNoSuchPolicy" {
 		err = nil
 	}
-	require.NoError(err, "list entities for test minio policy")
-	for _, pms := range pes.PolicyMappings {
-		for _, g := range pms.Groups {
-			if le {
-				_, err = ma.DetachPolicyLDAP(ctx, madmin.PolicyAssociationReq{Policies: []string{policy.Spec.Name}, Group: g})
-			} else {
-				_, err = ma.DetachPolicy(ctx, madmin.PolicyAssociationReq{Policies: []string{policy.Spec.Name}, Group: g})
-			}
-			require.NoError(err, "detach group from test minio policy")
+	require.NoError(err, "list builtin entities for test minio policy")
+	for _, p := range lpes.PolicyMappings {
+		for _, g := range p.Groups {
+			_, err = ma.DetachPolicyLDAP(ctx, madmin.PolicyAssociationReq{Policies: []string{policy.Spec.Name}, Group: g})
+			require.NoError(err, "detach ldap group from test minio policy")
 		}
-		for _, u := range pms.Users {
-			if le {
-				_, err = ma.DetachPolicyLDAP(ctx, madmin.PolicyAssociationReq{Policies: []string{policy.Spec.Name}, User: u})
-			} else {
-				_, err = ma.DetachPolicy(ctx, madmin.PolicyAssociationReq{Policies: []string{policy.Spec.Name}, User: u})
-			}
-			require.NoError(err, "detach user from test minio policy")
+		for _, u := range p.Users {
+			_, err = ma.DetachPolicyLDAP(ctx, madmin.PolicyAssociationReq{Policies: []string{policy.Spec.Name}, User: u})
+			require.NoError(err, "detach ldap user from test minio policy")
+		}
+	}
+	for _, p := range pes.PolicyMappings {
+		for _, g := range p.Groups {
+			_, err = ma.DetachPolicy(ctx, madmin.PolicyAssociationReq{Policies: []string{policy.Spec.Name}, Group: g})
+			require.NoError(err, "detach builtin group from test minio policy")
+		}
+		for _, u := range p.Users {
+			_, err = ma.DetachPolicy(ctx, madmin.PolicyAssociationReq{Policies: []string{policy.Spec.Name}, User: u})
+			require.NoError(err, "detach builtin user from test minio policy")
 		}
 	}
 	err = ma.RemoveCannedPolicy(ctx, policy.Spec.Name)
@@ -211,6 +207,9 @@ func Setup(t testing.TB) TestData {
 	require.NoError(err, "remove test minio user")
 
 	// delete existing identity provider
+	ics, err := ma.ListIDPConfig(ctx, "ldap")
+	require.NoError(err, "list minio identity providers config")
+	ic := ics[0]
 	r, err := ma.DeleteIDPConfig(ctx, ic.Type, ic.Name)
 	require.NoError(err, "delete minio identity provider")
 	if r {
@@ -251,6 +250,88 @@ func SetMinioLDAPIdentityProvider(td TestData) {
 	}
 }
 
+// LogLevelHandler configures a [slog.Handler] with a log level derived from the environment.
+type LogLevelHandler struct {
+	slog.Handler
+}
+
+func (src *LogLevelHandler) GetLevel() slog.Level {
+	l := slog.Level(100)
+	if os.Getenv("VERBOSE") == "1" {
+		l = slog.LevelDebug
+	}
+	return l
+}
+
+// Part of the [LogLevelHandler] implementation of [slog.Handler]
+func (src *LogLevelHandler) Enabled(ctx context.Context, lvl slog.Level) bool {
+	return lvl >= src.GetLevel()
+}
+
+// Used by [LogLevelHandler.Handle] to prevent error logs from being emitted.
+type DoNotLog struct{}
+
+func (e *DoNotLog) Error() string {
+	return "do not log"
+}
+
+// Part of the [LogLevelHandler] implementation of [slog.Handler]
+// NOTE: [logr.Logger] will log error messages regardless of verbosity - which is why this method is required
+// NOTE: [DoNotLog] is returned (vs. nil) - otherwise the log-line prefix will be emitted.
+func (src *LogLevelHandler) Handle(ctx context.Context, r slog.Record) error {
+	if r.Level >= src.GetLevel() {
+		return src.Handler.Handle(ctx, r)
+	}
+	return &DoNotLog{}
+}
+
+// Part of the [LogLevelHandler] implementation of [slog.Handler]
+func (src *LogLevelHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &LogLevelHandler{Handler: src.Handler.WithAttrs(attrs)}
+}
+
+// Part of the [LogLevelHandler] implementation of [slog.Handler]
+func (src *LogLevelHandler) WithGroup(name string) slog.Handler {
+	return &LogLevelHandler{Handler: src.Handler.WithGroup(name)}
+}
+
+// Returns a [slogt.Option] wrapping a [slogt.Bridge]'s [slog.Handler] in a [LogLevelHandler]
+func WithLogLevelHandler() slogt.Option {
+	return func(b *slogt.Bridge) {
+		b.Handler = &LogLevelHandler{Handler: b.Handler}
+	}
+}
+
+// LogCollector wraps a [slog.Handler] and collects emitted records
+type LogCollector struct {
+	slog.Handler
+	Records *[]slog.Record
+}
+
+// Part of the [LogCollector] implementation of [slog.Handler]
+func (src *LogCollector) Handle(ctx context.Context, r slog.Record) error {
+	rs := append(*src.Records, r)
+	*src.Records = rs
+	return src.Handler.Handle(ctx, r)
+}
+
+// Part of the [LogCollector] implementation of [slog.Handler]
+func (src *LogCollector) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &LogCollector{Records: src.Records, Handler: src.Handler.WithAttrs(attrs)}
+}
+
+// Part of the [LogCollector] implementation of [slog.Handler]
+func (src *LogCollector) WithGroup(name string) slog.Handler {
+	return &LogCollector{Records: src.Records, Handler: src.Handler.WithGroup(name)}
+}
+
+// Returns a [slogt.Option] wrapping a [slogt.Bridge]'s [slog.Handler] in a [LogCollector]
+func WithLogCollector(records *[]slog.Record) slogt.Option {
+	return func(b *slogt.Bridge) {
+		b.Handler = &LogCollector{Handler: b.Handler, Records: records}
+	}
+}
+
 // RunOperatorUntilOptions holds options for [RunOperatorUntil]
 type RunOperatorUntilOptions struct {
 	operator *operator.Main
@@ -281,7 +362,7 @@ func RunOperatorUntil(td TestData, rof func() error, ofs ...RunOperatorUntilOpt)
 	var err error
 	if o == nil {
 		// create operator if not defined
-		l := slogt.New(td.T)
+		l := slogt.New(td.T, slogt.Text(), WithLogLevelHandler())
 		o, err = operator.New(&operator.Opts{KubeConfig: td.KubeConfig, Logger: l})
 		td.Require.NoError(err, "create operator")
 	}
@@ -377,44 +458,13 @@ func WaitForStableResourceVersion(td TestData, o client.Object) {
 	td.Require.True(c < t, "resource change threshold reached")
 }
 
-// SlogRecordCollector implements [slog.Handler] - collecting emitted records and delegating to a wrapped [slog.Handler]
-// See: [WaitForReconcilerError]
-type SlogRecordCollector struct {
-	Records *[]slog.Record
-	Handler slog.Handler
-}
-
-// Part of the [SlogRecordCollector] implementation of [slog.Handler]
-func (src *SlogRecordCollector) Enabled(ctx context.Context, lvl slog.Level) bool {
-	return src.Handler.Enabled(ctx, lvl)
-}
-
-// Part of the [SlogRecordCollector] implementation of [slog.Handler]
-func (src *SlogRecordCollector) Handle(ctx context.Context, r slog.Record) error {
-	rs := append(*src.Records, r)
-	*src.Records = rs
-	return src.Handler.Handle(ctx, r)
-}
-
-// Part of the [SlogRecordCollector] implementation of [slog.Handler]
-func (src *SlogRecordCollector) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &SlogRecordCollector{Records: src.Records, Handler: src.Handler.WithAttrs(attrs)}
-}
-
-// Part of the [SlogRecordCollector] implementation of [slog.Handler]
-func (src *SlogRecordCollector) WithGroup(name string) slog.Handler {
-	return &SlogRecordCollector{Records: src.Records, Handler: src.Handler.WithGroup(name)}
-}
-
 // Collects reconciler errors and passes them to the callback - allowing unit tests to test for certain failures.
 // Accomplishes this by attaching a handler to the operator that collects log records and processes them for an 'err' attribute.
 func WaitForReconcilerError(td TestData, cb func(err error) error) {
 	rs := []slog.Record{}
 	prs := &rs
 
-	l := slogt.New(td.T, slogt.Text(), func(b *slogt.Bridge) {
-		b.Handler = &SlogRecordCollector{Records: prs, Handler: b.Handler}
-	})
+	l := slogt.New(td.T, slogt.Text(), WithLogLevelHandler(), WithLogCollector(&rs))
 	o, err := operator.New(&operator.Opts{KubeConfig: td.KubeConfig, Logger: l})
 	td.Require.NoError(err, "create operator")
 
@@ -807,6 +857,28 @@ func TestMinioGroupBinding(t *testing.T) {
 		waitForReconcile(td, gb)
 
 		WaitForStableResourceVersion(td, gb)
+	})
+
+	t.Run("can still delete a minio group binding when user deleted", func(t *testing.T) {
+		td := Setup(t)
+
+		gb := createGroupBinding(td)
+		waitForReconcile(td, gb)
+
+		u := builtinUser.DeepCopy()
+		err := td.Kube.Get(td.Ctx, client.ObjectKeyFromObject(u), u)
+		td.Require.NoError(err, "get user object")
+		err = td.Kube.Delete(td.Ctx, u)
+		td.Require.NoError(err, "delete user object")
+		WaitForDelete(td, u)
+
+		err = td.Kube.Delete(td.Ctx, gb)
+		td.Require.NoError(err, "delete group binding object")
+		WaitForDelete(td, gb)
+
+		gd, err := td.Madmin.GetGroupDescription(td.Ctx, gb.Spec.Group)
+		td.Require.NoError(err, "check if user is not group member")
+		td.Require.False(slices.Contains(gd.Members, gb.Spec.User), "user not member of group")
 	})
 }
 
@@ -1201,6 +1273,50 @@ func TestMinioPolicyBinding(t *testing.T) {
 		waitForReconcile(td, pb)
 
 		WaitForStableResourceVersion(td, pb)
+	})
+
+	t.Run("can still delete a minio policy binding when builtin user deleted", func(t *testing.T) {
+		td := Setup(t)
+
+		pb := createBuiltinUserPolicyBinding(td)
+		waitForReconcile(td, pb)
+
+		u := builtinUser.DeepCopy()
+		err := td.Kube.Get(td.Ctx, client.ObjectKeyFromObject(u), u)
+		td.Require.NoError(err, "get user object")
+		err = td.Kube.Delete(td.Ctx, u)
+		td.Require.NoError(err, "delete user object")
+		WaitForDelete(td, u)
+
+		err = td.Kube.Delete(td.Ctx, pb)
+		td.Require.NoError(err, "delete policy binding object")
+		WaitForDelete(td, pb)
+
+		pes, err := td.Madmin.GetPolicyEntities(td.Ctx, madmin.PolicyEntitiesQuery{Policy: []string{pb.Spec.Policy}})
+		td.Require.NoError(err, "check if policy binding exists")
+		td.Require.Len(pes.PolicyMappings, 0, "policy has no bindings")
+	})
+
+	t.Run("can still delete minio policy binding when builtin group deleted", func(t *testing.T) {
+		td := Setup(t)
+
+		pb := createBuiltinGroupPolicyBinding(td)
+		waitForReconcile(td, pb)
+
+		g := builtinGroup.DeepCopy()
+		err := td.Kube.Get(td.Ctx, client.ObjectKeyFromObject(g), g)
+		td.Require.NoError(err, "get group object")
+		err = td.Kube.Delete(td.Ctx, g)
+		td.Require.NoError(err, "delete group object")
+		WaitForDelete(td, g)
+
+		err = td.Kube.Delete(td.Ctx, pb)
+		td.Require.NoError(err, "delete policy binding object")
+		WaitForDelete(td, pb)
+
+		pes, err := td.Madmin.GetPolicyEntities(td.Ctx, madmin.PolicyEntitiesQuery{Policy: []string{pb.Spec.Policy}})
+		td.Require.NoError(err, "check if policy binding exists")
+		td.Require.Len(pes.PolicyMappings, 0, "policy has no bindings")
 	})
 }
 
