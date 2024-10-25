@@ -28,6 +28,10 @@ jobs:
         run: |
           curl -fsSL -o /usr/local/bin/versionctl "https://github.com/benfiola/versionctl/releases/latest/download/versionctl-linux-amd64"
           chmod +x /usr/local/bin/versionctl
+      - name: download helm
+        run: |
+          curl -fsSL -o /tmp/archive.tar.gz https://get.helm.sh/helm-v3.16.2-linux-amd64.tar.gz
+          tar xvzf /tmp/archive.tar.gz -C /usr/local/bin --strip-components 1
       - name: calculate facts
         id: facts
         run: |
@@ -65,6 +69,12 @@ jobs:
         if: "${{steps.facts.outputs.publish_latest == '1'}}"
         run: |
           docker buildx build --platform=linux/arm64,linux/amd64 --progress=plain --push --tag="${{steps.facts.outputs.latest_image}}" .
+      - name: package crds chart
+        run: |
+          helm package charts/crds --version "${{steps.facts.outputs.version}}" --app-version "${{steps.facts.outputs.version}}" --destination artifacts
+      - name: package operator chart
+        run: |
+          helm package charts/operator --version "${{steps.facts.outputs.version}}" --app-version "${{steps.facts.outputs.version}}" --destination artifacts
       - name: tag
         uses: actions/github-script@v7
         with:
@@ -80,7 +90,36 @@ jobs:
         with:
           body: |
             Published docker image: `${{steps.facts.outputs.image}}`.
+          files: |
+            artifacts/*.tgz
           make_latest: ${{github.ref == 'refs/heads/main'}}
           prerelease: ${{github.ref != 'refs/heads/main'}}
           tag_name: ${{steps.facts.outputs.tag}}
           target_commitish: ${{github.sha}}
+      - name: upload charts as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          if-no-files-found: error
+          name: charts
+          path: "artifacts/*-${{steps.facts.outputs.version}}.tgz"
+      - name: checkout github pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          fetch-depth: 0
+      - name: download charts artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: charts
+          merge-multiple: true
+      - name: regenerate helm repo index
+        run: |
+          helm repo index . --url https://benfiola.github.io/minio-operator-ext
+      - name: commit and push updated helm repo to github pages branch
+        run: |
+          git config --global user.name 'Ben Fiola'
+          git config --global user.email 'benfiola@users.noreply.github.com'
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+          git add -A
+          git commit -am "Added charts for version ${{steps.facts.outputs.version}}"
+          git push origin
