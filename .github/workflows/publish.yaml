@@ -75,13 +75,13 @@ jobs:
         run: |
           echo "${{needs.facts.outputs.version}}" > internal/operator/version.txt
           docker buildx create --platform=linux/arm64,linux/amd64 --use
-          docker buildx build --platform=linux/arm64,linux/amd64 --progress=plain --output type=tar,dest=docker.tar.gz .
+          docker buildx build --platform=linux/arm64,linux/amd64 --progress=plain --output type=oci,dest=docker.tar .
       - name: upload artifact
         uses: actions/upload-artifact@v4
         with:
           if-no-files-found: error
           name: docker
-          path: docker.tar.gz
+          path: docker.tar
 
   build-helm-charts:
     needs: [facts]
@@ -98,6 +98,7 @@ jobs:
         run: |
           curl -fsSL -o /tmp/archive.tar.gz https://get.helm.sh/helm-v3.16.2-linux-amd64.tar.gz
           tar xvzf /tmp/archive.tar.gz -C /usr/local/bin --strip-components 1
+          rm -rf /tmp/archive.tar.gz
       - name: package chart
         run: |
           helm package charts/${{matrix.chart}} --version "${{needs.facts.outputs.version}}" --app-version "${{needs.facts.outputs.version}}"
@@ -143,24 +144,32 @@ jobs:
     environment:
       name: publish
     steps:
+      - name: download crane
+        run: |
+          curl -o /tmp/archive.tar.gz -fsSL https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz
+          tar xvzf /tmp/archive.tar.gz -C /usr/local/bin
+          rm -rf /tmp/archive.tar.gz
       - name: download docker artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: docker
           path: .
           merge-multiple: true
-      - name: prepare docker
+      - name: prepare for publish
         run: |
-          docker login --username=benfiola --password "${{secrets.DOCKER_TOKEN}}"
+          mkdir -p /tmp/archive
+          tar xvf docker.tar -C /tmp/archive
+          crane auth login docker.io --username=benfiola --password='${{secrets.DOCKER_TOKEN}}''
       - name: publish docker image
         run: |
-          docker import docker.tar.gz "${{needs.facts.outputs.docker_image}}"
-          docker push "${{needs.facts.outputs.docker_image}}"
+          crane push /tmp/archive "${{needs.facts.outputs.docker_image}}"
       - name: publish latest docker image latest
         if: "${{needs.facts.outputs.is_main == '1'}}"
         run: |
-          docker import docker.tar.gz "${{needs.facts.outputs.docker_image_latest}}"
-          docker push "${{needs.facts.outputs.docker_image_latest}}"
+          crane push /tmp/archive "${{needs.facts.outputs.docker_image_latest}}
+      - name: cleanup
+        run: |
+          rm -rf /tmp/archive
 
   publish-helm:
     runs-on: ubuntu-latest
@@ -173,6 +182,7 @@ jobs:
         run: |
           curl -fsSL -o /tmp/archive.tar.gz https://get.helm.sh/helm-v3.16.2-linux-amd64.tar.gz
           tar xvzf /tmp/archive.tar.gz -C /usr/local/bin --strip-components 1
+          rm -rf /tmp/archive.tar.gz
       - name: checkout github pages branch
         uses: actions/checkout@v4
         with:

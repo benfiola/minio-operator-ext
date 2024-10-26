@@ -2,6 +2,7 @@
 ASSETS ?= $(shell pwd)/.dev
 DEV ?= $(shell pwd)/dev
 CONTROLLER_GEN_VERSION ?= 0.16.4
+CRANE_VERSION ?= 0.20.2
 HELM_VERSION ?= 3.16.1
 HELM_DOCS_VERSION ?= 1.14.2
 KUBERNETES_VERSION ?= 1.30.4
@@ -20,6 +21,9 @@ endif
 
 CONTROLLER_GEN = $(ASSETS)/controller-gen
 CONTROLLER_GEN_URL = https://github.com/kubernetes-sigs/controller-tools/releases/download/v$(CONTROLLER_GEN_VERSION)/controller-gen-$(OS)-$(ARCH)
+CRANE = $(ASSETS)/crane
+CRANE_CMD = env $(CRANE)
+CRANE_URL = https://github.com/google/go-containerregistry/releases/download/v$(CRANE_VERSION)/go-containerregistry_$(OS)_$(ALTARCH).tar.gz
 CRDS_MANIFEST = $(ASSETS)/crds.yaml
 CRDS_MANIFEST_SRC = $(DEV)/manifests/crds
 HELM = $(ASSETS)/helm
@@ -125,7 +129,7 @@ $(ASSETS):
 	mkdir -p $(ASSETS)
 
 .PHONY: install-tools
-install-tools: $(CONTROLLER_GEN) $(HELM) $(HELM_DOCS) $(LB_HOSTS_MANAGER) $(KUBECTL) $(MC) $(MINIKUBE)
+install-tools: $(CONTROLLER_GEN) $(CRANE) $(HELM) $(HELM_DOCS) $(LB_HOSTS_MANAGER) $(KUBECTL) $(MC) $(MINIKUBE)
 
 $(CONTROLLER_GEN): | $(ASSETS)
 	# install controller-gen
@@ -133,6 +137,19 @@ $(CONTROLLER_GEN): | $(ASSETS)
 	curl -o $(CONTROLLER_GEN) -fsSL $(CONTROLLER_GEN_URL)
 	# make executable
 	chmod +x $(CONTROLLER_GEN)
+
+$(CRANE): | $(ASSETS)
+	# install crane
+	# create extract directory
+	mkdir -p $(ASSETS)/.tmp
+	# download archive
+	curl -o $(ASSETS)/.tmp/archive.tar.gz -fsSL $(CRANE_URL)
+	# extract archive
+	tar xzf $(ASSETS)/.tmp/archive.tar.gz -C $(ASSETS)/.tmp
+	# copy executable
+	cp $(ASSETS)/.tmp/crane $(CRANE)
+	# delete extract directory
+	rm -rf $(ASSETS)/.tmp
 
 $(HELM): | $(ASSETS)
 	# install helm
