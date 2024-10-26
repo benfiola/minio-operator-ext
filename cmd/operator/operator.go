@@ -44,6 +44,7 @@ type ContextLogger struct{}
 
 func main() {
 	err := (&cli.App{
+		Usage: "the minio-operator-ext cli",
 		Before: func(c *cli.Context) error {
 			logger, err := configureLogging(c.String("log-level"))
 			if err != nil {
