@@ -1,19 +1,7 @@
 # minio-operator-ext
 
-This is the helm charts repository for the [minio-operator-ext](https://github.com/benfiola/minio-operator-ext) project.
+This is the website for the [minio-operator-ext](https://github.com/benfiola/minio-operator-ext) operator. This site is currently hosted through Github Pages and provides the helm chart repository for the operator.
 
-## Usage
+## Links
 
-You can add this repository using the `helm` CLI:
-
-```shell
-# add the repository
-helm repo add minio-operator-ext https://benfiola.github.io/minio-operator-ext/charts
-# search the repository for installable charts
-helm search repo minio-operator-ext
-```
-
-## Charts
-
-- [crds](./charts/README-crds.md)
-- [operator](./charts/README-operator.md)
+- [Helm Chart Repository](./charts)
