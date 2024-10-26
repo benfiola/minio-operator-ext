@@ -74,8 +74,8 @@ jobs:
       - name: build image tar
         run: |
           echo "${{needs.facts.outputs.version}}" > internal/operator/version.txt
-          docker buildx create --platform=linux/arm64,linux/amd64 --use
-          docker buildx build --platform=linux/arm64,linux/amd64 --progress=plain --output type=oci,dest=docker.tar .
+          docker buildx create --platform=linux/amd64 --use
+          docker buildx build --platform=linux/amd64 --progress=plain --output type=oci,dest=docker.tar .
       - name: upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -159,7 +159,7 @@ jobs:
         run: |
           mkdir -p /tmp/archive
           tar xvf docker.tar -C /tmp/archive
-          crane auth login docker.io --username=benfiola --password='${{secrets.DOCKER_TOKEN}}''
+          crane auth login docker.io --username=benfiola --password='${{secrets.DOCKER_TOKEN}}'
       - name: publish docker image
         run: |
           crane push /tmp/archive "${{needs.facts.outputs.docker_image}}"
