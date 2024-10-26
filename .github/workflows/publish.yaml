@@ -201,7 +201,7 @@ jobs:
           git config --global user.email 'benfiola@users.noreply.github.com'
           git remote set-url origin https://x-access-token:${{secrets.GITHUB_TOKEN}}@github.com/${{github.repository}}
           git add -A
-          git commit -am "Added charts for version ${{steps.facts.outputs.version}}"
+          git commit -am "Added charts for version ${{needs.facts.outputs.version}}"
           git push origin
 
   release:
@@ -218,6 +218,7 @@ jobs:
         with:
           body: |
             Published docker image: `${{needs.facts.outputs.docker_image}}`.
+            Published helm charts version: `${{needs.facts.outputs.version}}`.
           files: |
             artifacts/*
           make_latest: ${{needs.facts.outputs.is_main == '1'}}
