@@ -1,22 +1,19 @@
 ---
 # Default values for operator.
-
-# -- How many copies of the operator should be deployed.
-# More than 1 has not been tested.
-replicaCount: 1
-
 image:
-  # -- Where to pull the container image from
+  # -- Specify the repository to pull the image from
   repository: docker.io/benfiola/minio-operator-ext
-  # -- This sets the pull policy for images.
+  # -- Define the pull policy for workloads using this image
   pullPolicy: IfNotPresent
-  # -- Overrides the image tag whose default is the chart appVersion.
+  # -- Define the image tag to use
+  # If unset, uses the chart's app version.
   tag: ""
 
-# -- This is for the secretes for pulling an image from a private repository more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
+# -- Specify (if necessary) secrets required to pull the image.  More info: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
 imagePullSecrets: []
-# -- This is to override the chart name.
+# -- Override the chart name
 nameOverride: ""
+# -- Override the fully qualified name of resources created by this chart
 fullnameOverride: ""
 
 serviceAccount:
@@ -37,16 +34,17 @@ rbac:
   # If not set and create is true, a name is generated using the fullname template
   name: ""
 
-# -- This is for setting Kubernetes Annotations to a Pod.
+# -- Sets annotations for all pods created by this chart.
 podAnnotations: {}
-# -- This is for setting Kubernetes Labels to a Pod.
+# -- Sets labels to set for all pods created by this chart.
 podLabels: {}
 
-# -- Pod-level security context.
-podSecurityContext: {}
+# -- Sets the operator pod's security context
+podSecurityContext:
+  {}
   # fsGroup: 2000
 
-# -- Deployment-wide security context.
+# -- Sets the operator deployment's security context
 securityContext:
   capabilities:
     drop:
@@ -55,8 +53,9 @@ securityContext:
   runAsNonRoot: true
   runAsUser: 65534
 
-# -- Apply limits to the amount of resources allocated to the operator
-resources: {}
+# -- Sets the operator pod's resource requests and limits
+resources:
+  {}
   # We usually recommend not to specify default resources and to leave this as a conscious
   # choice for the user. This also increases chances charts run on environments with little
   # resources, such as Minikube. If you do want to specify resources, uncomment the following
@@ -68,7 +67,7 @@ resources: {}
   #   cpu: 100m
   #   memory: 128Mi
 
-# -- This is to setup the liveness probe
+# -- Define the operator pod's liveness probe
 livenessProbe:
   httpGet:
     path: /healthz
@@ -78,7 +77,7 @@ livenessProbe:
   failureThreshold: 5
   successThreshold: 1
   timeoutSeconds: 5
-# -- This is to setup the readiness probe
+# -- Define the operator pod's readiness probe
 readinessProbe:
   httpGet:
     path: /healthz
@@ -89,11 +88,11 @@ readinessProbe:
   successThreshold: 1
   timeoutSeconds: 5
 
-# -- Limit the operator to running on specific nodes.
+# -- Specify which node operator workloads should be scheduled to
 nodeSelector: {}
 
-# -- Allow the operator to run even when it normally wouldn't.
+# -- Specify which node's taints operator workloads will tolerate
 tolerations: []
 
-# -- Specify preferences for where the operator should be scheduled.
+# -- Specify which node's affinities operator workloads will prefer
 affinity: {}

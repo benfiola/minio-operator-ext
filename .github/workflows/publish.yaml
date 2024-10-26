@@ -2,79 +2,47 @@ name: publish
 on:
   push:
     branches:
-      - main
-      - dev
+      - post-helm
+
 jobs:
-  publish:
+  facts:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: write
     env:
       image_base: benfiola/minio-operator-ext
-    environment:
-      name: docker
-      url: https://hub.docker.com/r/benfiola/minio-operator-ext
+    concurrency:
+      group: ${{github.workflow}}-version
     steps:
       - name: checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: install go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.22.5"
       - name: download versionctl
         run: |
           curl -fsSL -o /usr/local/bin/versionctl "https://github.com/benfiola/versionctl/releases/latest/download/versionctl-linux-amd64"
           chmod +x /usr/local/bin/versionctl
-      - name: download helm
-        run: |
-          curl -fsSL -o /tmp/archive.tar.gz https://get.helm.sh/helm-v3.16.2-linux-amd64.tar.gz
-          tar xvzf /tmp/archive.tar.gz -C /usr/local/bin --strip-components 1
       - name: calculate facts
         id: facts
         run: |
           version="$(versionctl next)"
           tag="$(versionctl convert "${version}" git)"
-          image_tag="$(versionctl convert "${version}" docker)"
+          docker_tag="$(versionctl convert "${version}" docker)"
 
-          image="docker.io/${{env.image_base}}:${image_tag}"
-          latest_image="docker.io/${{env.image_base}}:latest"
+          docker_image="docker.io/${{env.image_base}}:${docker_tag}"
+          docker_image_latest="docker.io/${{env.image_base}}:latest"
 
-          publish_latest="0"
+          publish_docker_image_latest="0"
+          publish_helm_docs="0"
           if [ "${{github.ref}}" = "refs/heads/main" ]; then
-            publish_latest="1"
+            publish_image_latest="1"
+            publish_helm_docs="1"
           fi
 
-          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "docker_image=${docker_image}" >> "${GITHUB_OUTPUT}"
+          echo "docker_image_latest=${docker_image_latest}" >> "${GITHUB_OUTPUT}"
+          echo "publish_docker_image_latest=${publish_docker_image_latest}" >> "${GITHUB_OUTPUT}"
+          echo "publish_helm_docs=${publish_helm_docs}" >> "${GITHUB_OUTPUT}"
           echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
-          echo "image=${image}" >> "${GITHUB_OUTPUT}"
-          echo "latest_image=${latest_image}" >> "${GITHUB_OUTPUT}"
-          echo "publish_latest=${publish_latest}" >> "${GITHUB_OUTPUT}"
-      - name: set version
-        run: |
-          echo "${{steps.facts.outputs.version}}" > internal/operator/version.txt
-      - name: prepare docker
-        run: |
-          docker buildx create --platform linux/arm64,linux/amd64 --use
-          docker login --username=benfiola --password "${{secrets.DOCKER_TOKEN}}"
-      - name: build image
-        run: |
-          docker buildx build --platform=linux/arm64,linux/amd64 --progress=plain .
-      - name: publish image
-        run: |
-          docker buildx build --platform=linux/arm64,linux/amd64 --progress=plain --push --tag="${{steps.facts.outputs.image}}" .
-      - name: publish latest image
-        if: "${{steps.facts.outputs.publish_latest == '1'}}"
-        run: |
-          docker buildx build --platform=linux/arm64,linux/amd64 --progress=plain --push --tag="${{steps.facts.outputs.latest_image}}" .
-      - name: package crds chart
-        run: |
-          helm package charts/crds --version "${{steps.facts.outputs.version}}" --app-version "${{steps.facts.outputs.version}}" --destination artifacts
-      - name: package operator chart
-        run: |
-          helm package charts/operator --version "${{steps.facts.outputs.version}}" --app-version "${{steps.facts.outputs.version}}" --destination artifacts
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
       - name: tag
         uses: actions/github-script@v7
         with:
@@ -85,41 +53,122 @@ jobs:
               ref: 'refs/tags/${{steps.facts.outputs.tag}}',
               sha: context.sha
             })
-      - name: release
-        uses: softprops/action-gh-release@v2
+
+    outputs:
+      docker_image: ${{steps.facts.outputs.image}}
+      docker_image_latest: ${{steps.facts.outputs.image_latest}}
+      publish_docker_image_latest: ${{steps.facts.outputs.publish_image_latest}}
+      publish_helm_docs: ${{steps.facts.outputs.publish_helm_docs}}
+      tag: ${{steps.facts.outputs.tag}}
+      version: ${{steps.facts.outputs.version}}
+
+  docker:
+    needs: facts
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
         with:
-          body: |
-            Published docker image: `${{steps.facts.outputs.image}}`.
-          files: |
-            artifacts/*.tgz
-          make_latest: ${{github.ref == 'refs/heads/main'}}
-          prerelease: ${{github.ref != 'refs/heads/main'}}
-          tag_name: ${{steps.facts.outputs.tag}}
-          target_commitish: ${{github.sha}}
-      - name: upload charts as artifact
+          fetch-depth: 0
+      - name: build
+        run: |
+          echo "${{needs.facts.outputs.version}}" > internal/operator/version.txt
+          docker buildx create --platform linux/arm64,linux/amd64 --use
+          docker buildx build --platform=linux/arm64,linux/amd64 --progress=plain . --output type=tar,dest=docker.tar.gz
+      - name: upload artifact
         uses: actions/upload-artifact@v4
         with:
           if-no-files-found: error
-          name: charts
-          path: "artifacts/*-${{steps.facts.outputs.version}}.tgz"
-      - name: checkout github pages branch
+          name: docker.tar.gz
+          path: docker.tar.gz
+
+  helm:
+    needs: facts
+    strategy:
+      matrix:
+        chart: [crds, operator]
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
         uses: actions/checkout@v4
         with:
-          ref: gh-pages
           fetch-depth: 0
-      - name: download charts artifacts
-        uses: actions/download-artifact@v4
+      - name: download helm
+        run: |
+          curl -fsSL -o /tmp/archive.tar.gz https://get.helm.sh/helm-v3.16.2-linux-amd64.tar.gz
+          tar xvzf /tmp/archive.tar.gz -C /usr/local/bin --strip-components 1
+      - name: package
+        run: |
+          helm package charts/${{matrix.chart}} --version "${{needs.facts.outputs.version}}" --app-version "${{needs.facts.outputs.version}}"
+      - name: upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          pattern: charts
-          merge-multiple: true
-      - name: regenerate helm repo index
-        run: |
-          helm repo index . --url https://benfiola.github.io/minio-operator-ext
-      - name: commit and push updated helm repo to github pages branch
-        run: |
-          git config --global user.name 'Ben Fiola'
-          git config --global user.email 'benfiola@users.noreply.github.com'
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
-          git add -A
-          git commit -am "Added charts for version ${{steps.facts.outputs.version}}"
-          git push origin
+          if-no-files-found: error
+          name: helm-${{matrix.chart}}
+          path: ${{matrix.chart}}-${{needs.facts.outputs.version}}.tgz
+
+  # publish:
+  #   runs-on: ubuntu-latest
+  #   needs: [version, docker, helm]
+  #   permissions:
+  #     id-token: write
+  #     contents: write
+  #   steps:
+  #     - name: prepare docker
+  #       run: |
+  #         docker buildx create --platform linux/arm64,linux/amd64 --use
+  #         docker login --username=benfiola --password "${{secrets.DOCKER_TOKEN}}"
+  #     - name: build image
+  #       run: |
+  #         docker buildx build --platform=linux/arm64,linux/amd64 --progress=plain .
+  #     - name: publish image
+  #       run: |
+  #         docker buildx build --platform=linux/arm64,linux/amd64 --progress=plain --push --tag="${{steps.facts.outputs.image}}" .
+  #     - name: publish latest image
+  #       if: "${{steps.facts.outputs.publish_latest == '1'}}"
+  #       run: |
+  #         docker buildx build --platform=linux/arm64,linux/amd64 --progress=plain --push --tag="${{steps.facts.outputs.latest_image}}" .
+  #     - name: package crds chart
+  #       run: |
+  #         helm package charts/crds --version "${{steps.facts.outputs.version}}" --app-version "${{steps.facts.outputs.version}}" --destination artifacts
+  #     - name: package operator chart
+  #       run: |
+  #         helm package charts/operator --version "${{steps.facts.outputs.version}}" --app-version "${{steps.facts.outputs.version}}" --destination artifacts
+  #     - name: release
+  #       uses: softprops/action-gh-release@v2
+  #       with:
+  #         body: |
+  #           Published docker image: `${{steps.facts.outputs.image}}`.
+  #         files: |
+  #           artifacts/*.tgz
+  #         make_latest: ${{github.ref == 'refs/heads/main'}}
+  #         prerelease: ${{github.ref != 'refs/heads/main'}}
+  #         tag_name: ${{steps.facts.outputs.tag}}
+  #         target_commitish: ${{github.sha}}
+  #     - name: upload charts as artifact
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         if-no-files-found: error
+  #         name: charts
+  #         path: "artifacts/*-${{steps.facts.outputs.version}}.tgz"
+  #     - name: checkout github pages branch
+  #       uses: actions/checkout@v4
+  #       with:
+  #         ref: gh-pages
+  #         fetch-depth: 0
+  #     - name: download charts artifacts
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         pattern: charts
+  #         merge-multiple: true
+  #     - name: regenerate helm repo index
+  #       run: |
+  #         helm repo index . --url https://benfiola.github.io/minio-operator-ext
+  #     - name: commit and push updated helm repo to github pages branch
+  #       run: |
+  #         git config --global user.name 'Ben Fiola'
+  #         git config --global user.email 'benfiola@users.noreply.github.com'
+  #         git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+  #         git add -A
+  #         git commit -am "Added charts for version ${{steps.facts.outputs.version}}"
+  #         git push origin
