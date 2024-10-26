@@ -11,6 +11,9 @@ jobs:
       image_base: benfiola/minio-operator-ext
     concurrency:
       group: ${{github.workflow}}-version
+    permissions:
+      id-token: write
+      contents: write
     steps:
       - name: checkout
         uses: actions/checkout@v4
