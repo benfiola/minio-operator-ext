@@ -15,5 +15,5 @@ helm search repo minio-operator-ext
 
 ## Charts
 
-- [crds](./charts/README-crds.md)
-- [operator](./charts/README-operator.md)
+- [crds](./README-crds.md)
+- [operator](./README-operator.md)
