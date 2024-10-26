@@ -1,0 +1,6 @@
+helmGlobals:
+  chartHome: ../../../charts
+
+helmCharts:
+  - name: crds
+    releaseName: crds

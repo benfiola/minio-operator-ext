@@ -12,7 +12,6 @@ MINIKUBE_VERSION ?= 1.34.0
 
 OS = $(shell go env GOOS)
 ARCH = $(shell go env GOARCH)
-MANIFESTS = $(shell pwd)/manifests
 
 ALTARCH = $(ARCH)
 ifeq ($(ALTARCH),amd64)
@@ -22,7 +21,7 @@ endif
 CONTROLLER_GEN = $(ASSETS)/controller-gen
 CONTROLLER_GEN_URL = https://github.com/kubernetes-sigs/controller-tools/releases/download/v$(CONTROLLER_GEN_VERSION)/controller-gen-$(OS)-$(ARCH)
 CRDS_MANIFEST = $(ASSETS)/crds.yaml
-CRDS_MANIFEST_SRC = $(MANIFESTS)/crds.yaml
+CRDS_MANIFEST_SRC = $(DEV)/manifests/crds
 HELM = $(ASSETS)/helm
 HELM_CMD = env $(HELM)
 HELM_URL = https://get.helm.sh/helm-v$(HELM_VERSION)-$(OS)-$(ARCH).tar.gz
@@ -120,10 +119,6 @@ generate: $(CONTROLLER_GEN)
 	$(CONTROLLER_GEN) object paths=./...
 	# generate crds
 	$(CONTROLLER_GEN) crd paths=./... output:stdout > ./charts/crds/templates/crds.yaml
-	# generate rbac
-	$(CONTROLLER_GEN) rbac:roleName=minio-operator-ext paths=./... output:stdout > ./manifests/rbac.yaml
-	# generate chart readmes
-	$(HELM_DOCS_CMD) -c charts
 
 $(ASSETS):
 	# create .dev directory
@@ -206,9 +201,9 @@ apply-manifests: $(CRDS_MANIFEST) $(KUBECTL) $(MINIO_OPERATOR_MANIFEST) $(MINIO_
 	# deploy crds
 	$(KUBECTL_CMD) apply -f $(CRDS_MANIFEST)
 
-$(CRDS_MANIFEST): | $(ASSETS)
-	# copy crds manifest
-	cp $(CRDS_MANIFEST_SRC) $(CRDS_MANIFEST)
+$(CRDS_MANIFEST): $(KUBECTL) | $(ASSETS)
+	# generate crds manifest
+	$(KUSTOMIZE_CMD) $(CRDS_MANIFEST_SRC) > $(CRDS_MANIFEST)
 
 $(MINIO_OPERATOR_MANIFEST): $(KUBECTL) $(HELM) | $(ASSETS)
 	# generate minio operator manifest

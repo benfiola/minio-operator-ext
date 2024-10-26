@@ -2,7 +2,7 @@
 
 The [MinIO Operator](https://github.com/minio/operator) currently is capable of deploying MinIO tenants - but does not expose any mechanisms by which one could declaratively manage resources within a MinIO tenant.
 
-This repo extends the MinIO Operator (i.e., minio-operator-ext(ension)) - providing an additional [operator](./internal/operator/operator.go) and [CRDs](./manifests/crds.yaml) that allow one to declaratiely manage users, buckets, policies and policy bindings.
+This repo extends the MinIO Operator (i.e., minio-operator-ext(ension)) - providing an additional [operator](./internal/operator/operator.go) and [CRDs](./charts/crds/templates/crds.yaml) that allow one to declaratiely manage users, buckets, policies and policy bindings.
 
 ## Resources
 
@@ -20,15 +20,21 @@ Examples of these resources can be found [here](./manifests/example-resources.ya
 ## Installation
 
 > [!IMPORTANT]
-> 
+>
 > Read [this](https://github.com/benfiola/minio-operator-ext/issues/16#issuecomment-2401553200) if you are updating from version 1.X.X to version 2.X.X of the operator.
 
-Installation is a two-step process:
+Use [helm](https://helm.sh/) to install the operator:
 
-- Deploy the [CRDs](./manifests/crds.yaml)
-- Deploy the operator ([example](./manifests/example-deployment.yaml))
+```shell
+# add the minio-operator-ext helm chart repository
+helm repo add minio-operator-ext https://benfiola.github.io/minio-operator-ext/charts
+# deploy the crds
+helm install minio-operator-ext-crds minio-operator-ext/crds
+# deploy the operator
+helm install minio-operator-ext-operator minio-operator-ext/operator
+```
 
-NOTE: While the example uses _latest_, it's recommended to pin your CRDs and operator image to a specific version tag for consistency.
+Documentation for these helm charts can be found [here](https://benfiola.github.io/minio-operator-ext/).
 
 ### Image
 
@@ -80,6 +86,7 @@ NOTE: Helper scripts are written under the assumption that they're being execute
 From the project root, run the following to install useful tools. Currently, this includes:
 
 - helm
+- helm-docs
 - kubectl
 - lb-hosts-manager
 - mc
