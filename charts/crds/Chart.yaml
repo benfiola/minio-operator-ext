@@ -1,8 +1,9 @@
 ---
 apiVersion: v2
 name: crds
-description: Deploy custom resource definitions for Minio Operator Ext
-
+home: "https://github.com/benfiola/minio-operator-ext"
+description: |
+  Deploys the custom resource definitions used by the minio-operator-ext operator
 type: application
-version: 0.1.0
-appVersion: "2.1.0"
+version: "0.0.0"
+appVersion: "0.0.0"
