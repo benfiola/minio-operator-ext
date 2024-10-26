@@ -64,7 +64,6 @@ jobs:
       version: ${{steps.facts.outputs.version}}
 
   build-docker:
-    # if: false
     needs: [facts]
     runs-on: ubuntu-latest
     steps:
@@ -84,7 +83,7 @@ jobs:
           name: docker
           path: docker.tar.gz
 
-  build-helm:
+  build-helm-charts:
     needs: [facts]
     strategy:
       matrix:
@@ -106,16 +105,15 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           if-no-files-found: error
-          name: helm-${{matrix.chart}}
+          name: helm-charts-${{matrix.chart}}
           path: ${{matrix.chart}}-${{needs.facts.outputs.version}}.tgz
 
   build-helm-docs:
-    needs: [facts, build-helm]
+    needs: [facts, build-helm-charts]
     strategy:
       matrix:
         chart: [crds, operator]
     runs-on: ubuntu-latest
-    if: "${{needs.facts.outputs.is_main == '1'}}"
     steps:
       - name: download helm-docs
         run: |
@@ -166,7 +164,7 @@ jobs:
 
   publish-helm:
     runs-on: ubuntu-latest
-    needs: [facts, build-helm, build-helm-docs]
+    needs: [facts, build-helm-charts, build-helm-docs]
     permissions:
       id-token: write
       contents: write
@@ -183,7 +181,14 @@ jobs:
       - name: download helm artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: helm-*
+          pattern: helm-charts-*
+          path: charts
+          merge-multiple: true
+      - name: download helm chart artifacts
+        uses: actions/download-artifact@v4
+        if: "${{needs.facts.outputs.is_main == '1'}}"
+        with:
+          pattern: helm-charts-*
           path: charts
           merge-multiple: true
       - name: regenerate helm repo index
