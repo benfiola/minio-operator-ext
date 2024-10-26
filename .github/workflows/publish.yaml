@@ -164,7 +164,7 @@ jobs:
 
   publish-helm:
     runs-on: ubuntu-latest
-    needs: [facts, build-helm-charts, build-helm-docs]
+    needs: [facts, build-helm-charts, build-helm-docs, publish-docker]
     permissions:
       id-token: write
       contents: write
