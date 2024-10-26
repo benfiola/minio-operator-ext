@@ -4,78 +4,49 @@ on:
     branches:
       - main
       - dev
+
 jobs:
-  publish:
+  facts:
     runs-on: ubuntu-latest
+    env:
+      image_base: benfiola/minio-operator-ext
+    concurrency:
+      group: ${{github.workflow}}-version
     permissions:
       id-token: write
       contents: write
-    env:
-      image_base: benfiola/minio-operator-ext
-    environment:
-      name: docker
-      url: https://hub.docker.com/r/benfiola/minio-operator-ext
     steps:
       - name: checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: install go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.22.5"
+          fetch-tags: true
       - name: download versionctl
         run: |
           curl -fsSL -o /usr/local/bin/versionctl "https://github.com/benfiola/versionctl/releases/latest/download/versionctl-linux-amd64"
           chmod +x /usr/local/bin/versionctl
-      - name: download helm
-        run: |
-          curl -fsSL -o /tmp/archive.tar.gz https://get.helm.sh/helm-v3.16.2-linux-amd64.tar.gz
-          tar xvzf /tmp/archive.tar.gz -C /usr/local/bin --strip-components 1
       - name: calculate facts
         id: facts
         run: |
+          versionctl --log-level=debug next
           version="$(versionctl next)"
           tag="$(versionctl convert "${version}" git)"
-          image_tag="$(versionctl convert "${version}" docker)"
+          docker_tag="$(versionctl convert "${version}" docker)"
 
-          image="docker.io/${{env.image_base}}:${image_tag}"
-          latest_image="docker.io/${{env.image_base}}:latest"
+          docker_image="docker.io/${{env.image_base}}:${docker_tag}"
+          docker_image_latest="docker.io/${{env.image_base}}:latest"
 
-          publish_latest="0"
+          is_main="0"
           if [ "${{github.ref}}" = "refs/heads/main" ]; then
-            publish_latest="1"
+            is_main="1"
           fi
 
-          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "docker_image=${docker_image}" >> "${GITHUB_OUTPUT}"
+          echo "docker_image_latest=${docker_image_latest}" >> "${GITHUB_OUTPUT}"
+          echo "is_main=${is_main}" >> "${GITHUB_OUTPUT}"
           echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
-          echo "image=${image}" >> "${GITHUB_OUTPUT}"
-          echo "latest_image=${latest_image}" >> "${GITHUB_OUTPUT}"
-          echo "publish_latest=${publish_latest}" >> "${GITHUB_OUTPUT}"
-      - name: set version
-        run: |
-          echo "${{steps.facts.outputs.version}}" > internal/operator/version.txt
-      - name: prepare docker
-        run: |
-          docker buildx create --platform linux/arm64,linux/amd64 --use
-          docker login --username=benfiola --password "${{secrets.DOCKER_TOKEN}}"
-      - name: build image
-        run: |
-          docker buildx build --platform=linux/arm64,linux/amd64 --progress=plain .
-      - name: publish image
-        run: |
-          docker buildx build --platform=linux/arm64,linux/amd64 --progress=plain --push --tag="${{steps.facts.outputs.image}}" .
-      - name: publish latest image
-        if: "${{steps.facts.outputs.publish_latest == '1'}}"
-        run: |
-          docker buildx build --platform=linux/arm64,linux/amd64 --progress=plain --push --tag="${{steps.facts.outputs.latest_image}}" .
-      - name: package crds chart
-        run: |
-          helm package charts/crds --version "${{steps.facts.outputs.version}}" --app-version "${{steps.facts.outputs.version}}" --destination artifacts
-      - name: package operator chart
-        run: |
-          helm package charts/operator --version "${{steps.facts.outputs.version}}" --app-version "${{steps.facts.outputs.version}}" --destination artifacts
-      - name: tag
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+      - name: create git tag
         uses: actions/github-script@v7
         with:
           script: |
@@ -85,32 +56,135 @@ jobs:
               ref: 'refs/tags/${{steps.facts.outputs.tag}}',
               sha: context.sha
             })
-      - name: release
-        uses: softprops/action-gh-release@v2
+    outputs:
+      docker_image: ${{steps.facts.outputs.docker_image}}
+      docker_image_latest: ${{steps.facts.outputs.docker_image_latest}}
+      is_main: ${{steps.facts.outputs.is_main}}
+      tag: ${{steps.facts.outputs.tag}}
+      version: ${{steps.facts.outputs.version}}
+
+  build-docker:
+    # if: false
+    needs: [facts]
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
         with:
-          body: |
-            Published docker image: `${{steps.facts.outputs.image}}`.
-          files: |
-            artifacts/*.tgz
-          make_latest: ${{github.ref == 'refs/heads/main'}}
-          prerelease: ${{github.ref != 'refs/heads/main'}}
-          tag_name: ${{steps.facts.outputs.tag}}
-          target_commitish: ${{github.sha}}
-      - name: upload charts as artifact
+          fetch-depth: 0
+      - name: build image tar
+        run: |
+          echo "${{needs.facts.outputs.version}}" > internal/operator/version.txt
+          docker buildx create --platform=linux/arm64,linux/amd64 --use
+          docker buildx build --platform=linux/arm64,linux/amd64 --progress=plain --output type=tar,dest=docker.tar.gz .
+      - name: upload artifact
         uses: actions/upload-artifact@v4
         with:
           if-no-files-found: error
-          name: charts
-          path: "artifacts/*-${{steps.facts.outputs.version}}.tgz"
+          name: docker
+          path: docker.tar.gz
+
+  build-helm:
+    needs: [facts]
+    strategy:
+      matrix:
+        chart: [crds, operator]
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: download helm
+        run: |
+          curl -fsSL -o /tmp/archive.tar.gz https://get.helm.sh/helm-v3.16.2-linux-amd64.tar.gz
+          tar xvzf /tmp/archive.tar.gz -C /usr/local/bin --strip-components 1
+      - name: package chart
+        run: |
+          helm package charts/${{matrix.chart}} --version "${{needs.facts.outputs.version}}" --app-version "${{needs.facts.outputs.version}}"
+      - name: upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          if-no-files-found: error
+          name: helm-${{matrix.chart}}
+          path: ${{matrix.chart}}-${{needs.facts.outputs.version}}.tgz
+
+  build-helm-docs:
+    needs: [facts, build-helm]
+    strategy:
+      matrix:
+        chart: [crds, operator]
+    runs-on: ubuntu-latest
+    if: "${{needs.facts.outputs.is_main == '1'}}"
+    steps:
+      - name: download helm-docs
+        run: |
+          curl -fsSL -o /tmp/archive.tar.gz https://github.com/norwoodj/helm-docs/releases/download/v1.14.2/helm-docs_1.14.2_Linux_x86_64.tar.gz
+          tar xvzf /tmp/archive.tar.gz -C /usr/local/bin
+          rm -rf /tmp/archive.tar.gz
+      - name: download chart
+        uses: actions/download-artifact@v4
+        with:
+          pattern: helm-${{matrix.chart}}
+          path: .
+          merge-multiple: true
+      - name: generate chart docs
+        run: |
+          tar xvzf ${{matrix.chart}}-${{needs.facts.outputs.version}}.tgz --strip-components 1
+          helm-docs -o README-${{matrix.chart}}.md
+      - name: upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          if-no-files-found: error
+          name: helm-docs-${{matrix.chart}}
+          path: README-${{matrix.chart}}.md
+
+  publish-docker:
+    runs-on: ubuntu-latest
+    needs: [facts, build-docker]
+    environment:
+      name: publish
+    steps:
+      - name: download docker artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: docker
+          path: .
+          merge-multiple: true
+      - name: prepare docker
+        run: |
+          docker login --username=benfiola --password "${{secrets.DOCKER_TOKEN}}"
+      - name: publish docker image
+        run: |
+          docker import docker.tar.gz "${{needs.facts.outputs.docker_image}}"
+          docker push "${{needs.facts.outputs.docker_image}}"
+      - name: publish latest docker image latest
+        if: "${{needs.facts.outputs.is_main == '1'}}"
+        run: |
+          docker import docker.tar.gz "${{needs.facts.outputs.docker_image_latest}}"
+          docker push "${{needs.facts.outputs.docker_image_latest}}"
+
+  publish-helm:
+    runs-on: ubuntu-latest
+    needs: [facts, build-helm, build-helm-docs]
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - name: download helm
+        run: |
+          curl -fsSL -o /tmp/archive.tar.gz https://get.helm.sh/helm-v3.16.2-linux-amd64.tar.gz
+          tar xvzf /tmp/archive.tar.gz -C /usr/local/bin --strip-components 1
       - name: checkout github pages branch
         uses: actions/checkout@v4
         with:
           ref: gh-pages
           fetch-depth: 0
-      - name: download charts artifacts
+      - name: download helm artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: charts
+          pattern: helm-*
+          path: .
           merge-multiple: true
       - name: regenerate helm repo index
         run: |
@@ -119,7 +193,28 @@ jobs:
         run: |
           git config --global user.name 'Ben Fiola'
           git config --global user.email 'benfiola@users.noreply.github.com'
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+          git remote set-url origin https://x-access-token:${{secrets.GITHUB_TOKEN}}@github.com/${{github.repository}}
           git add -A
           git commit -am "Added charts for version ${{steps.facts.outputs.version}}"
           git push origin
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [facts, publish-docker, publish-helm]
+    permissions:
+      id-token: write
+      contents: write
+    environment:
+      name: publish
+    steps:
+      - name: release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: |
+            Published docker image: `${{needs.facts.outputs.docker_image}}`.
+          files: |
+            artifacts/*
+          make_latest: ${{needs.facts.outputs.is_main == '1'}}
+          prerelease: ${{needs.facts.outputs.is_main != '1'}}
+          tag_name: ${{needs.facts.outputs.tag}}
+          target_commitish: ${{github.sha}}

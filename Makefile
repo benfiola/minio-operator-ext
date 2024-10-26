@@ -3,6 +3,7 @@ ASSETS ?= $(shell pwd)/.dev
 DEV ?= $(shell pwd)/dev
 CONTROLLER_GEN_VERSION ?= 0.16.4
 HELM_VERSION ?= 3.16.1
+HELM_DOCS_VERSION ?= 1.14.2
 KUBERNETES_VERSION ?= 1.30.4
 LB_HOSTS_MANAGER_VERSION ?= 0.1.0
 MINIO_VERSION ?= 6.0.3
@@ -13,6 +14,11 @@ OS = $(shell go env GOOS)
 ARCH = $(shell go env GOARCH)
 MANIFESTS = $(shell pwd)/manifests
 
+ALTARCH = $(ARCH)
+ifeq ($(ALTARCH),amd64)
+	ALTARCH = x86_64
+endif
+
 CONTROLLER_GEN = $(ASSETS)/controller-gen
 CONTROLLER_GEN_URL = https://github.com/kubernetes-sigs/controller-tools/releases/download/v$(CONTROLLER_GEN_VERSION)/controller-gen-$(OS)-$(ARCH)
 CRDS_MANIFEST = $(ASSETS)/crds.yaml
@@ -20,6 +26,9 @@ CRDS_MANIFEST_SRC = $(MANIFESTS)/crds.yaml
 HELM = $(ASSETS)/helm
 HELM_CMD = env $(HELM)
 HELM_URL = https://get.helm.sh/helm-v$(HELM_VERSION)-$(OS)-$(ARCH).tar.gz
+HELM_DOCS = $(ASSETS)/helm-docs
+HELM_DOCS_CMD = env $(HELM_DOCS)
+HELM_DOCS_URL = https://github.com/norwoodj/helm-docs/releases/download/v$(HELM_DOCS_VERSION)/helm-docs_$(HELM_DOCS_VERSION)_$(OS)_$(ALTARCH).tar.gz
 KUBECONFIG = $(ASSETS)/kube-config.yaml
 KUBECTL = $(ASSETS)/kubectl
 KUBECTL_CMD = env KUBECONFIG=$(KUBECONFIG) $(ASSETS)/kubectl
@@ -114,14 +123,14 @@ generate: $(CONTROLLER_GEN)
 	# generate rbac
 	$(CONTROLLER_GEN) rbac:roleName=minio-operator-ext paths=./... output:stdout > ./manifests/rbac.yaml
 	# generate chart readmes
-	helm-docs
+	$(HELM_DOCS_CMD) -c charts
 
 $(ASSETS):
 	# create .dev directory
 	mkdir -p $(ASSETS)
 
 .PHONY: install-tools
-install-tools: $(CONTROLLER_GEN) $(HELM) $(LB_HOSTS_MANAGER) $(KUBECTL) $(MC) $(MINIKUBE)
+install-tools: $(CONTROLLER_GEN) $(HELM) $(HELM_DOCS) $(LB_HOSTS_MANAGER) $(KUBECTL) $(MC) $(MINIKUBE)
 
 $(CONTROLLER_GEN): | $(ASSETS)
 	# install controller-gen
@@ -139,7 +148,20 @@ $(HELM): | $(ASSETS)
 	# extract archive
 	tar xzf $(ASSETS)/.tmp/archive.tar.gz -C $(ASSETS)/.tmp --strip-components 1
 	# copy executable
-	cp $(ASSETS)/.tmp/helm $(ASSETS)/helm
+	cp $(ASSETS)/.tmp/helm $(HELM)
+	# delete extract directory
+	rm -rf $(ASSETS)/.tmp
+
+$(HELM_DOCS): | $(ASSETS)
+	# install helm-docs
+	# create extract directory
+	mkdir -p $(ASSETS)/.tmp
+	# download archive
+	curl -o $(ASSETS)/.tmp/archive.tar.gz -fsSL $(HELM_DOCS_URL)
+	# extract archive
+	tar xzf $(ASSETS)/.tmp/archive.tar.gz -C $(ASSETS)/.tmp
+	# copy executable
+	cp $(ASSETS)/.tmp/helm-docs $(HELM_DOCS)
 	# delete extract directory
 	rm -rf $(ASSETS)/.tmp
 
