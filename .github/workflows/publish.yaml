@@ -184,11 +184,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: helm-*
-          path: .
+          path: charts
           merge-multiple: true
       - name: regenerate helm repo index
         run: |
-          helm repo index . --url https://benfiola.github.io/minio-operator-ext
+          cd charts
+          helm repo index . --url https://benfiola.github.io/minio-operator-ext/charts
       - name: commit and push updated helm repo to github pages branch
         run: |
           git config --global user.name 'Ben Fiola'
