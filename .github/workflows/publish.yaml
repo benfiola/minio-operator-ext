@@ -4,9 +4,10 @@ on:
     branches:
       - main
       - dev
+      - generate-more-code
 
 jobs:
-  facts:
+  prepare:
     runs-on: ubuntu-latest
     env:
       image_base: benfiola/minio-operator-ext
@@ -28,7 +29,7 @@ jobs:
       - name: calculate facts
         id: facts
         run: |
-          versionctl --log-level=debug next
+          versionctl next
           version="$(versionctl next)"
           tag="$(versionctl convert "${version}" git)"
           docker_tag="$(versionctl convert "${version}" docker)"
@@ -56,6 +57,18 @@ jobs:
               ref: 'refs/tags/${{steps.facts.outputs.tag}}',
               sha: context.sha
             })
+      - name: generate code
+        run: |
+          echo "${{steps.facts.outputs.version}}" > internal/operator/version.txt
+          make generate
+          git diff --exit-code
+      - name: upload source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          if-no-files-found: error
+          include-hidden-files: true
+          name: source
+          path: "*"
     outputs:
       docker_image: ${{steps.facts.outputs.docker_image}}
       docker_image_latest: ${{steps.facts.outputs.docker_image_latest}}
@@ -64,16 +77,17 @@ jobs:
       version: ${{steps.facts.outputs.version}}
 
   build-docker:
-    needs: [facts]
+    needs: [prepare]
     runs-on: ubuntu-latest
     steps:
-      - name: checkout
-        uses: actions/checkout@v4
+      - name: download source artifact
+        uses: actions/download-artifact@v4
         with:
-          fetch-depth: 0
+          pattern: source
+          path: .
+          merge-multiple: true
       - name: build image tar
         run: |
-          echo "${{needs.facts.outputs.version}}" > internal/operator/version.txt
           docker buildx create --platform=linux/arm64,linux/amd64 --use
           docker buildx build --platform=linux/arm64,linux/amd64 --progress=plain --output type=oci,dest=docker.tar .
       - name: upload artifact
@@ -84,16 +98,18 @@ jobs:
           path: docker.tar
 
   build-helm-charts:
-    needs: [facts]
+    needs: [prepare]
     strategy:
       matrix:
         chart: [crds, operator]
     runs-on: ubuntu-latest
     steps:
-      - name: checkout
-        uses: actions/checkout@v4
+      - name: download source
+        uses: actions/download-artifact@v4
         with:
-          fetch-depth: 0
+          pattern: source
+          path: .
+          merge-multiple: true
       - name: download helm
         run: |
           curl -fsSL -o /tmp/archive.tar.gz https://get.helm.sh/helm-v3.16.2-linux-amd64.tar.gz
@@ -101,16 +117,16 @@ jobs:
           rm -rf /tmp/archive.tar.gz
       - name: package chart
         run: |
-          helm package charts/${{matrix.chart}} --version "${{needs.facts.outputs.version}}" --app-version "${{needs.facts.outputs.version}}"
+          helm package charts/${{matrix.chart}} --version "${{needs.prepare.outputs.version}}" --app-version "${{needs.prepare.outputs.version}}"
       - name: upload artifact
         uses: actions/upload-artifact@v4
         with:
           if-no-files-found: error
           name: helm-charts-${{matrix.chart}}
-          path: ${{matrix.chart}}-${{needs.facts.outputs.version}}.tgz
+          path: ${{matrix.chart}}-${{needs.prepare.outputs.version}}.tgz
 
   build-helm-docs:
-    needs: [facts, build-helm-charts]
+    needs: [prepare, build-helm-charts]
     strategy:
       matrix:
         chart: [crds, operator]
@@ -129,7 +145,7 @@ jobs:
           merge-multiple: true
       - name: generate chart docs
         run: |
-          tar xvzf ${{matrix.chart}}-${{needs.facts.outputs.version}}.tgz --strip-components 1
+          tar xvzf ${{matrix.chart}}-${{needs.prepare.outputs.version}}.tgz --strip-components 1
           helm-docs -o README-${{matrix.chart}}.md
       - name: upload artifact
         uses: actions/upload-artifact@v4
@@ -140,7 +156,7 @@ jobs:
 
   publish-docker:
     runs-on: ubuntu-latest
-    needs: [facts, build-docker]
+    needs: [prepare, build-docker]
     environment:
       name: publish
     steps:
@@ -162,18 +178,18 @@ jobs:
           crane auth login docker.io --username=benfiola --password='${{secrets.DOCKER_TOKEN}}'
       - name: publish docker image
         run: |
-          crane push /tmp/archive "${{needs.facts.outputs.docker_image}}"
+          crane push /tmp/archive "${{needs.prepare.outputs.docker_image}}"
       - name: publish latest docker image latest
-        if: "${{needs.facts.outputs.is_main == '1'}}"
+        if: "${{needs.prepare.outputs.is_main == '1'}}"
         run: |
-          crane push /tmp/archive "${{needs.facts.outputs.docker_image_latest}}
+          crane push /tmp/archive "${{needs.prepare.outputs.docker_image_latest}}"
       - name: cleanup
         run: |
           rm -rf /tmp/archive
 
   publish-helm:
     runs-on: ubuntu-latest
-    needs: [facts, build-helm-charts, build-helm-docs, publish-docker]
+    needs: [prepare, build-helm-charts, build-helm-docs, publish-docker]
     permissions:
       id-token: write
       contents: write
@@ -196,7 +212,7 @@ jobs:
           merge-multiple: true
       - name: download helm chart artifacts
         uses: actions/download-artifact@v4
-        if: "${{needs.facts.outputs.is_main == '1'}}"
+        if: "${{needs.prepare.outputs.is_main == '1'}}"
         with:
           pattern: helm-charts-*
           path: charts
@@ -211,12 +227,12 @@ jobs:
           git config --global user.email 'benfiola@users.noreply.github.com'
           git remote set-url origin https://x-access-token:${{secrets.GITHUB_TOKEN}}@github.com/${{github.repository}}
           git add -A
-          git commit -am "Added charts for version ${{needs.facts.outputs.version}}"
+          git commit -am "Added charts for version ${{needs.prepare.outputs.version}}"
           git push origin
 
   release:
     runs-on: ubuntu-latest
-    needs: [facts, publish-docker, publish-helm]
+    needs: [prepare, publish-docker, publish-helm]
     permissions:
       id-token: write
       contents: write
@@ -227,11 +243,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           body: |
-            Published docker image: `${{needs.facts.outputs.docker_image}}`.
-            Published helm charts version: `${{needs.facts.outputs.version}}`.
+            Published docker image: `${{needs.prepare.outputs.docker_image}}`.
+            Published helm charts version: `${{needs.prepare.outputs.version}}`.
           files: |
             artifacts/*
-          make_latest: ${{needs.facts.outputs.is_main == '1'}}
-          prerelease: ${{needs.facts.outputs.is_main != '1'}}
-          tag_name: ${{needs.facts.outputs.tag}}
+          make_latest: ${{needs.prepare.outputs.is_main == '1'}}
+          prerelease: ${{needs.prepare.outputs.is_main != '1'}}
+          tag_name: ${{needs.prepare.outputs.tag}}
           target_commitish: ${{github.sha}}

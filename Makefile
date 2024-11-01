@@ -121,8 +121,16 @@ wait-for-ready:
 generate: $(CONTROLLER_GEN)
 	# generate deepcopy
 	$(CONTROLLER_GEN) object paths=./...
+	# clean up generated crds directories
+	rm -rf ./charts/crds/generated
+	mkdir -p ./charts/crds/generated
 	# generate crds
-	$(CONTROLLER_GEN) crd paths=./... output:stdout > ./charts/crds/templates/crds.yaml
+	$(CONTROLLER_GEN) crd paths=./... output:stdout > ./charts/crds/generated/crds.yaml
+	# clean up generated operator directories
+	rm -rf ./charts/operator/generated
+	mkdir -p ./charts/operator/generated
+	# generate rbac
+	$(CONTROLLER_GEN) rbac:roleName=__roleName__ paths=./... output:stdout > ./charts/operator/generated/rbac.yaml
 
 $(ASSETS):
 	# create .dev directory
