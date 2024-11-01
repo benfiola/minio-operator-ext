@@ -59,7 +59,7 @@ jobs:
             })
       - name: generate code
         run: |
-          echo "${{steps.facts.outputs.version}}" > internal/operator/version.txt
+          echo "${{steps.facts.outputs.version}}" > internal/embed/version.txt
           make generate
           git diff --exit-code
       - name: upload source artifact

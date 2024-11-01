@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 
+	"github.com/benfiola/minio-operator-ext/internal"
 	"github.com/benfiola/minio-operator-ext/internal/operator"
 	"github.com/urfave/cli/v2"
 )
@@ -93,8 +93,7 @@ func main() {
 				Name:  "version",
 				Usage: "prints the operator version",
 				Action: func(c *cli.Context) error {
-					v := strings.TrimSpace(operator.OperatorVersion)
-					fmt.Fprintf(c.App.Writer, "%s", v)
+					fmt.Fprintf(c.App.Writer, "%s", internal.GetOperatorVersion())
 					return nil
 				},
 			},
