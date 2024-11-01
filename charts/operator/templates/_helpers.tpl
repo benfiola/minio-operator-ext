@@ -37,7 +37,7 @@ Common labels
 helm.sh/chart: {{ include "operator.chart" . }}
 {{ include "operator.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
-app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | replace "+" "-" | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
@@ -66,4 +66,11 @@ Create the name of the ClusterRole to use
 */}}
 {{- define "operator.clusterRoleName" -}}
 {{- default (include "operator.fullname" .) .Values.rbac.name }}
+{{- end }}
+
+{{/*
+Determine the operator image tag to use
+*/}}
+{{- define "operator.imageTag" -}}
+{{ .Values.image.tag | default (.Chart.AppVersion | replace "+" "-") }}
 {{- end }}

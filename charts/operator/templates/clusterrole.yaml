@@ -7,32 +7,6 @@ metadata:
   labels:
     {{- include "operator.labels" . | nindent 4 }}
 rules:
-  - apiGroups:
-      - ""
-    resources:
-      - configmaps
-      - secrets
-      - services
-    verbs:
-      - get
-  - apiGroups:
-      - bfiola.dev
-    resources:
-      - miniobuckets
-      - miniogroupbindings
-      - miniogroups
-      - miniopolicies
-      - miniopolicybindings
-      - miniousers
-    verbs:
-      - get
-      - list
-      - update
-      - watch
-  - apiGroups:
-      - minio.min.io
-    resources:
-      - tenants
-    verbs:
-      - get
+{{- $rbac := .Files.Get "generated/rbac.yaml" | fromYaml -}}
+{{- get $rbac "rules" | toYaml | nindent 2 -}}
 {{- end }}

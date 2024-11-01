@@ -1,0 +1,3 @@
+# this file is included so:
+# - golang's embed module will embed the 'embed' directory
+# - git will track a potentially empty 'embed' directory

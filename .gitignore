@@ -6,3 +6,9 @@
 
 # ignore dev assets
 /.dev
+
+# ignore generated assets
+charts/crds/generated
+charts/operator/generated
+internal/embed/**/*
+!internal/embed/empty.txt
