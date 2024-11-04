@@ -3,7 +3,7 @@ kind: MinioBucket
 metadata:
   name: bucket
 spec:
-  deletionPolicy: IfNotEmpty
+  deletionPolicy: IfEmpty
   name: bucket
   tenantRef:
     namespace: minio-tenant
