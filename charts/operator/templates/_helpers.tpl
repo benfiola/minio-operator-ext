@@ -67,3 +67,10 @@ Create the name of the ClusterRole to use
 {{- define "operator.clusterRoleName" -}}
 {{- default (include "operator.fullname" .) .Values.rbac.name }}
 {{- end }}
+
+{{/*
+Determine the operator image tag to use
+*/}}
+{{- define "operator.imageTag" -}}
+{{ .Values.image.tag | default (.Chart.AppVersion | replace "+" "-")}}
+{{- end }}
