@@ -226,7 +226,7 @@ apply-manifests: $(CRDS_MANIFEST) $(KUBECTL) $(MINIO_OPERATOR_MANIFEST) $(MINIO_
 	# deploy crds
 	$(KUBECTL_CMD) apply -f $(CRDS_MANIFEST)
 
-$(CRDS_MANIFEST): $(KUBECTL) $(HELM) | $(ASSETS)
+$(CRDS_MANIFEST): generate $(KUBECTL) $(HELM) | $(ASSETS)
 	# generate crds manifest
 	$(KUSTOMIZE_CMD) $(CRDS_MANIFEST_SRC) > $(CRDS_MANIFEST)
 
