@@ -31,6 +31,7 @@ type MinioBucket struct {
 // MinioBucketSpec defines the desired state of MinioBucket
 type MinioBucketSpec struct {
 	DeletionPolicy string      `json:"deletionPolicy"`
+	Migrate        bool        `json:"migrate,omitempty"`
 	Name           string      `json:"name"`
 	TenantRef      ResourceRef `json:"tenantRef"`
 }

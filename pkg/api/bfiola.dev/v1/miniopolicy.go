@@ -30,6 +30,7 @@ type MinioPolicyStatement struct {
 
 // MinioPolicySpec defines the desired state of MinioPolicy
 type MinioPolicySpec struct {
+	Migrate   bool                   `json:"migrate,omitempty"`
 	Name      string                 `json:"name"`
 	Statement []MinioPolicyStatement `json:"statement"`
 	TenantRef ResourceRef            `json:"tenantRef"`

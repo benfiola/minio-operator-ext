@@ -75,6 +75,28 @@ Some minio resource properties are ignored on update. This is done by design to 
 | MinioUser.Spec.AccessKey | Can break MinioGroupBinding and MinioPolicyBinding resources |
 | MinioPolicy.Spec.Name    | Can break MinioPolicyBinding resources                       |
 
+## Migrations
+
+> [!CAUTION]
+>
+> The operator is designed to manage the entire lifecycle of its resources. This feature allows the operator to 'take ownership' of Minio objects it did not originally create.  Once the operator takes ownership of these existing Minio objects - it _can_ and _will_ modify them to match the state of its corresponding Kubernetes resources!
+
+In more complex scenarios, users might want the operator to manage existing Minio objects. To allow existing objects to be managed by the operator, set the `.spec.migrate` field to _true_ for these resources.
+
+```yaml
+apiVersion: bfiola.dev/v1
+kind: MinioBucket
+...
+spec:
+  ...
+   name: a
+   migrate: true # <- add this
+```
+
+> [!NOTE]
+>
+> This spec field is _automatically_ removed by the operator once it takes ownership of a resource.
+
 ## Development
 
 I personally use [vscode](https://code.visualstudio.com/) as an IDE. For a consistent development experience, this project is also configured to utilize [devcontainers](https://containers.dev/). If you're using both - and you have the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) installed - you can follow the [introductory docs](https://code.visualstudio.com/docs/devcontainers/tutorial) to quickly get started.

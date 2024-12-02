@@ -23,6 +23,7 @@ type MinioGroup struct {
 
 // MinioGroupSpec defines the desired state of MinioGroup
 type MinioGroupSpec struct {
+	Migrate   bool        `json:"migrate,omitempty"`
 	Name      string      `json:"name"`
 	TenantRef ResourceRef `json:"tenantRef"`
 }
