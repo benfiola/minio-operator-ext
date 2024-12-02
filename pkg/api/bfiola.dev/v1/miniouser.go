@@ -24,8 +24,9 @@ type MinioUser struct {
 // MinioUserSpec defines the desired state of MinioUser
 type MinioUserSpec struct {
 	AccessKey    string         `json:"accessKey"`
-	TenantRef    ResourceRef    `json:"tenantRef"`
+	Migrate      bool           `json:"migrate,omitempty"`
 	SecretKeyRef ResourceKeyRef `json:"secretKeyRef"`
+	TenantRef    ResourceRef    `json:"tenantRef"`
 }
 
 // MinioUserStatus defines the current state of MinioUser

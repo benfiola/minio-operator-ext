@@ -25,6 +25,7 @@ type MinioGroupBinding struct {
 // MinioGroupBindingSpec defines the desired state of MinioGroupBinding
 type MinioGroupBindingSpec struct {
 	Group     string      `json:"group"`
+	Migrate   bool        `json:"migrate,omitempty"`
 	TenantRef ResourceRef `json:"tenantRef,omitempty"`
 	User      string      `json:"user"`
 }

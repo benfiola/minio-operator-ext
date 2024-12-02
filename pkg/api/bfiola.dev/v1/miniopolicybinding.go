@@ -31,6 +31,7 @@ type MinioPolicyBindingIdentity struct {
 // MinioPolicyBindingSpec defines the desired state of MinioPolicyBinding
 type MinioPolicyBindingSpec struct {
 	Group     MinioPolicyBindingIdentity `json:"group,omitempty"`
+	Migrate   bool                       `json:"migrate,omitempty"`
 	Policy    string                     `json:"policy"`
 	TenantRef ResourceRef                `json:"tenantRef"`
 	User      MinioPolicyBindingIdentity `json:"user,omitempty"`

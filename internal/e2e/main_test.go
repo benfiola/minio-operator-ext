@@ -544,6 +544,42 @@ func TestMinioBucket(t *testing.T) {
 		td.Require.True(be, "check if bucket exists")
 	})
 
+	t.Run("does not create a minio bucket if one exists", func(t *testing.T) {
+		td := Setup(t)
+
+		b := createBucket(td)
+		err := td.Minio.MakeBucket(td.Ctx, b.Spec.Name, minio.MakeBucketOptions{})
+		td.Require.NoError(err, "create minio bucket")
+
+		WaitForReconcilerError(td, func(err error) error {
+			merr, ok := err.(minio.ErrorResponse)
+			if !ok {
+				return nil
+			}
+			if merr.Code != "BucketAlreadyOwnedByYou" {
+				return nil
+			}
+			if merr.BucketName != b.Spec.Name {
+				return nil
+			}
+			return StopIteration{}
+		})
+	})
+
+	t.Run("migrates an existing bucket if migrate set to true", func(t *testing.T) {
+		td := Setup(t)
+
+		b := createBucket(td)
+		err := td.Minio.MakeBucket(td.Ctx, b.Spec.Name, minio.MakeBucketOptions{})
+		td.Require.NoError(err, "create minio bucket")
+		b.Spec.Migrate = true
+		err = td.Kube.Update(td.Ctx, b)
+		td.Require.NoError(err, "update bucket resource")
+
+		waitForReconcile(td, b)
+		td.Require.False(b.Spec.Migrate, "migrate unset on reconcile")
+	})
+
 	t.Run("deletes a minio bucket", func(t *testing.T) {
 		td := Setup(t)
 
@@ -691,6 +727,35 @@ func TestMinioGroup(t *testing.T) {
 		td.Require.NoError(err, "check if group exists")
 	})
 
+	t.Run("does not create a minio group if one exists", func(t *testing.T) {
+		td := Setup(t)
+
+		g := createGroup(td)
+		err := td.Madmin.UpdateGroupMembers(td.Ctx, madmin.GroupAddRemove{Group: g.Spec.Name})
+		td.Require.NoError(err, "create minio group")
+
+		WaitForReconcilerError(td, func(err error) error {
+			if err.Error() != fmt.Sprintf("group %s already exists", g.Spec.Name) {
+				return nil
+			}
+			return StopIteration{}
+		})
+	})
+
+	t.Run("migrates an existing group if migrate set to true", func(t *testing.T) {
+		td := Setup(t)
+
+		g := createGroup(td)
+		err := td.Madmin.UpdateGroupMembers(td.Ctx, madmin.GroupAddRemove{Group: g.Spec.Name})
+		td.Require.NoError(err, "create minio group")
+		g.Spec.Migrate = true
+		err = td.Kube.Update(td.Ctx, g)
+		td.Require.NoError(err, "update group resource")
+
+		waitForReconcile(td, g)
+		td.Require.False(g.Spec.Migrate, "migrate unset on reconcile")
+	})
+
 	t.Run("deletes a minio group", func(t *testing.T) {
 		td := Setup(t)
 
@@ -773,7 +838,7 @@ func TestMinioGroupBinding(t *testing.T) {
 	waitForReconcile := func(td TestData, gb *v1.MinioGroupBinding) {
 		RunOperatorUntil(td, func() error {
 			err := td.Kube.Get(td.Ctx, client.ObjectKeyFromObject(gb), gb)
-			td.Require.NoError(err, "waiting for group reconcile")
+			td.Require.NoError(err, "waiting for group binding reconcile")
 			if gb.Status.CurrentSpec == nil {
 				return nil
 			}
@@ -793,6 +858,51 @@ func TestMinioGroupBinding(t *testing.T) {
 		gd, err := td.Madmin.GetGroupDescription(td.Ctx, gb.Spec.Group)
 		td.Require.NoError(err, "check if user is group member")
 		td.Require.True(slices.Contains(gd.Members, gb.Spec.User), "user not member of group")
+	})
+
+	t.Run("does not create a minio group binding if one exists", func(t *testing.T) {
+		td := Setup(t)
+
+		gb := createGroupBinding(td)
+		waitForReconcile(td, gb)
+
+		err := td.Kube.Delete(td.Ctx, gb)
+		td.Require.NoError(err, "delete minio group binding resource")
+		WaitForDelete(td, gb)
+
+		gb = builtinGroupToBuiltinUser.DeepCopy()
+		err = td.Kube.Create(td.Ctx, gb)
+		td.Require.NoError(err, "create minio group binding resource")
+		err = td.Madmin.UpdateGroupMembers(td.Ctx, madmin.GroupAddRemove{Group: gb.Spec.Group, Members: []string{gb.Spec.User}})
+		td.Require.NoError(err, "create minio group binding")
+
+		WaitForReconcilerError(td, func(err error) error {
+			if err.Error() != fmt.Sprintf("user %s already member of group %s", gb.Spec.User, gb.Spec.Group) {
+				return nil
+			}
+			return StopIteration{}
+		})
+	})
+
+	t.Run("migrates an existing group if migrate set to true", func(t *testing.T) {
+		td := Setup(t)
+
+		gb := createGroupBinding(td)
+		waitForReconcile(td, gb)
+
+		err := td.Kube.Delete(td.Ctx, gb)
+		td.Require.NoError(err, "delete minio group binding resource")
+		WaitForDelete(td, gb)
+
+		gb = builtinGroupToBuiltinUser.DeepCopy()
+		gb.Spec.Migrate = true
+		err = td.Kube.Create(td.Ctx, gb)
+		td.Require.NoError(err, "create minio group binding resource")
+		err = td.Madmin.UpdateGroupMembers(td.Ctx, madmin.GroupAddRemove{Group: gb.Spec.Group, Members: []string{gb.Spec.User}})
+		td.Require.NoError(err, "create minio group binding")
+
+		waitForReconcile(td, gb)
+		td.Require.False(gb.Spec.Migrate, "migrate unset on reconcile")
 	})
 
 	t.Run("deletes a minio group binding", func(t *testing.T) {
@@ -915,6 +1025,39 @@ func TestMinioPolicy(t *testing.T) {
 
 		_, err := td.Madmin.InfoCannedPolicyV2(td.Ctx, p.Spec.Name)
 		td.Require.NoError(err, "check if policy exists")
+	})
+
+	t.Run("does not create a minio policy if one exists", func(t *testing.T) {
+		td := Setup(t)
+
+		p := createPolicy(td)
+		pb, err := json.Marshal(map[string]any{"Version": p.Spec.Version, "Statement": p.Spec.Statement})
+		td.Require.NoError(err, "marshal minio policy")
+		err = td.Madmin.AddCannedPolicy(td.Ctx, p.Spec.Name, pb)
+		td.Require.NoError(err, "create minio policy")
+
+		WaitForReconcilerError(td, func(err error) error {
+			if err.Error() != fmt.Sprintf("policy %s already exists", p.Spec.Name) {
+				return nil
+			}
+			return StopIteration{}
+		})
+	})
+
+	t.Run("migrates an existing policy if migrate set to true", func(t *testing.T) {
+		td := Setup(t)
+
+		p := createPolicy(td)
+		p.Spec.Migrate = true
+		err := td.Kube.Update(td.Ctx, p)
+		td.Require.NoError(err, "update minio policy resource")
+		pb, err := json.Marshal(map[string]any{"Version": p.Spec.Version, "Statement": p.Spec.Statement})
+		td.Require.NoError(err, "marshal minio policy")
+		err = td.Madmin.AddCannedPolicy(td.Ctx, p.Spec.Name, pb)
+		td.Require.NoError(err, "create minio policy")
+
+		waitForReconcile(td, p)
+		td.Require.False(p.Spec.Migrate, "migrate unset on reconcile")
 	})
 
 	t.Run("deletes a minio policy", func(t *testing.T) {
@@ -1104,6 +1247,51 @@ func TestMinioPolicyBinding(t *testing.T) {
 		pes, err := td.Madmin.GetPolicyEntities(td.Ctx, madmin.PolicyEntitiesQuery{Policy: []string{pb.Spec.Policy}})
 		td.Require.NoError(err, "check if policy binding exists")
 		td.Require.True(slices.Contains(pes.PolicyMappings[0].Users, pb.Spec.User.Builtin))
+	})
+
+	t.Run("does not create a builtin user minio policy binding if one exists", func(t *testing.T) {
+		td := Setup(t)
+
+		pb := createBuiltinUserPolicyBinding(td)
+		waitForReconcile(td, pb)
+		err := td.Kube.Delete(td.Ctx, pb)
+		td.Require.NoError(err, "delete policy binding resource")
+		WaitForDelete(td, pb)
+		_, err = td.Madmin.AttachPolicy(td.Ctx, madmin.PolicyAssociationReq{Policies: []string{pb.Spec.Policy}, User: pb.Spec.User.Builtin})
+		td.Require.NoError(err, "create policy binding")
+		pb = policyToBuiltinUser.DeepCopy()
+		err = td.Kube.Create(td.Ctx, pb)
+		td.Require.NoError(err, "create policy binding resource")
+
+		WaitForReconcilerError(td, func(err error) error {
+			merr, ok := err.(madmin.ErrorResponse)
+			if !ok {
+				return nil
+			}
+			if merr.Code != "XMinioAdminPolicyChangeAlreadyApplied" {
+				return nil
+			}
+			return StopIteration{}
+		})
+	})
+
+	t.Run("migrates an existing builtin user policy binding if migrate set to true", func(t *testing.T) {
+		td := Setup(t)
+
+		pb := createBuiltinUserPolicyBinding(td)
+		waitForReconcile(td, pb)
+		err := td.Kube.Delete(td.Ctx, pb)
+		td.Require.NoError(err, "delete policy binding resource")
+		WaitForDelete(td, pb)
+		_, err = td.Madmin.AttachPolicy(td.Ctx, madmin.PolicyAssociationReq{Policies: []string{pb.Spec.Policy}, User: pb.Spec.User.Builtin})
+		td.Require.NoError(err, "create policy binding")
+		pb = policyToBuiltinUser.DeepCopy()
+		pb.Spec.Migrate = true
+		err = td.Kube.Create(td.Ctx, pb)
+		td.Require.NoError(err, "create policy binding resource")
+
+		waitForReconcile(td, pb)
+		td.Require.False(pb.Spec.Migrate, "migrate unset on reconcile")
 	})
 
 	t.Run("creates an ldap group minio policy binding", func(t *testing.T) {
@@ -1362,6 +1550,37 @@ func TestMinioUser(t *testing.T) {
 		td.Require.NoError(err, "create client with user credentials")
 		_, err = c.AccountInfo(td.Ctx, madmin.AccountOpts{})
 		td.Require.NoError(err, "check if user credentials valid")
+	})
+
+	t.Run("does not create a minio group if one exists", func(t *testing.T) {
+		td := Setup(t)
+
+		u := createUser(td)
+		sk := builtinUserSecret.StringData["SecretKey"]
+		err := td.Madmin.AddUser(td.Ctx, u.Spec.AccessKey, sk)
+		td.Require.NoError(err, "create minio user")
+
+		WaitForReconcilerError(td, func(err error) error {
+			if err.Error() != fmt.Sprintf("user %s already exists", u.Spec.AccessKey) {
+				return nil
+			}
+			return StopIteration{}
+		})
+	})
+
+	t.Run("migrates an existing group if migrate set to true", func(t *testing.T) {
+		td := Setup(t)
+
+		u := createUser(td)
+		sk := builtinUserSecret.StringData["SecretKey"]
+		err := td.Madmin.AddUser(td.Ctx, u.Spec.AccessKey, string(sk))
+		td.Require.NoError(err, "create minio user")
+		u.Spec.Migrate = true
+		err = td.Kube.Update(td.Ctx, u)
+		td.Require.NoError(err, "update user resource")
+
+		waitForReconcile(td, u)
+		td.Require.False(u.Spec.Migrate, "migrate unset on reconcile")
 	})
 
 	t.Run("deletes a minio user", func(t *testing.T) {

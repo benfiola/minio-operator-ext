@@ -76,7 +76,7 @@ spec:
   tenantRef:
     namespace: minio-tenant
     name: myminio
-  version: 2012-10-17
+  version: "2012-10-17"
 ---
 apiVersion: bfiola.dev/v1
 kind: MinioPolicyBinding
