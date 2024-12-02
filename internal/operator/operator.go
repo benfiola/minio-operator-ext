@@ -433,6 +433,15 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 	if b.Status.CurrentSpec != nil {
 		l.Info("check for bucket change")
 
+		if b.Spec.Migrate {
+			l.Info("remove migrate spec field")
+			b.Spec.Migrate = false
+			err = r.Update(ctx, b)
+			if err != nil {
+				return failure(err)
+			}
+		}
+
 		l.Info("get tenant client")
 		tr := b.Status.CurrentSpec.TenantRef.SetDefaultNamespace(b.GetNamespace())
 		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
@@ -490,11 +499,15 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 
 		l.Info("create minio bucket")
 		err = mtc.MakeBucket(ctx, b.Spec.Name, minioclient.MakeBucketOptions{})
+		if b.Spec.Migrate {
+			err = ignoreMinioErrorCode(err, "BucketAlreadyOwnedByYou")
+		}
 		if err != nil {
 			return failure(err)
 		}
 
 		l.Info("set status")
+		b.Spec.Migrate = false
 		b.Status.CurrentSpec = &b.Spec
 		err = r.Update(ctx, b)
 		if err != nil {
@@ -604,6 +617,15 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 	if g.Status.CurrentSpec != nil {
 		l.Info("check for group change")
 
+		if g.Spec.Migrate {
+			l.Info("remove migrate spec field")
+			g.Spec.Migrate = false
+			err = r.Update(ctx, g)
+			if err != nil {
+				return failure(err)
+			}
+		}
+
 		l.Info("get tenant admin client")
 		tr := g.Status.CurrentSpec.TenantRef.SetDefaultNamespace(g.GetNamespace())
 		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
@@ -615,7 +637,7 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 			return failure(err)
 		}
 
-		l.Info("check if minio group exists")
+		l.Info("get minio group description")
 		_, err = mtac.GetGroupDescription(ctx, g.Status.CurrentSpec.Name)
 		e := !isMadminErrorCode(err, "XMinioAdminNoSuchGroup")
 		err = ignoreMadminErrorCode(err, "XMinioAdminNoSuchGroup")
@@ -648,9 +670,10 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 			return failure(err)
 		}
 
-		l.Info("check if minio group exists")
+		l.Info("get minio group")
 		_, err = mtac.GetGroupDescription(ctx, g.Spec.Name)
-		if err == nil {
+		exists := err == nil
+		if exists && !g.Spec.Migrate {
 			err = fmt.Errorf("group %s already exists", g.Spec.Name)
 		}
 		err = ignoreMadminErrorCode(err, "XMinioAdminNoSuchGroup")
@@ -668,6 +691,7 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 		}
 
 		l.Info("set status")
+		g.Spec.Migrate = false
 		g.Status.CurrentSpec = &g.Spec
 		err = r.Update(ctx, g)
 		if err != nil {
@@ -786,6 +810,17 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 
 	if gb.Status.CurrentSpec != nil {
 		l.Info("check for group binding change")
+
+		if gb.Spec.Migrate {
+			l.Info("remove migrate spec field")
+			gb.Spec.Migrate = false
+			err = r.Update(ctx, gb)
+			if err != nil {
+				return failure(err)
+			}
+		}
+
+		l.Info("get tenant admin client")
 		tr := gb.Status.CurrentSpec.TenantRef.SetDefaultNamespace(gb.GetNamespace())
 		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
 		if err != nil {
@@ -796,6 +831,7 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 			return failure(err)
 		}
 
+		l.Info("get minio group")
 		gd, err := mtac.GetGroupDescription(ctx, gb.Status.CurrentSpec.Group)
 		if err != nil {
 			return failure(err)
@@ -837,6 +873,19 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 			return failure(err)
 		}
 
+		l.Info("get minio group description")
+		gd, err := mtac.GetGroupDescription(ctx, gb.Spec.Group)
+		if err != nil {
+			return failure(err)
+		}
+		exists := slices.Contains(gd.Members, gb.Spec.User)
+		if exists && !gb.Spec.Migrate {
+			err = fmt.Errorf("user %s already member of group %s", gb.Spec.User, gb.Spec.Group)
+		}
+		if err != nil {
+			return failure(err)
+		}
+
 		l.Info("add minio group member")
 		err = mtac.UpdateGroupMembers(ctx, madmin.GroupAddRemove{
 			Group:    gb.Spec.Group,
@@ -848,6 +897,7 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 		}
 
 		l.Info("set status")
+		gb.Spec.Migrate = false
 		gb.Status.CurrentSpec = &gb.Spec
 		err = r.Update(ctx, gb)
 		if err != nil {
@@ -988,6 +1038,15 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 	if p.Status.CurrentSpec != nil {
 		l.Info("check for policy change")
 
+		if p.Spec.Migrate {
+			l.Info("remove migrate spec field")
+			p.Spec.Migrate = false
+			err = r.Update(ctx, p)
+			if err != nil {
+				return failure(err)
+			}
+		}
+
 		l.Info("get tenant admin client")
 		tr := p.Status.CurrentSpec.TenantRef.SetDefaultNamespace(p.GetNamespace())
 		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
@@ -1091,6 +1150,17 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 			return failure(err)
 		}
 
+		l.Info("get minio policy")
+		_, err = mtac.InfoCannedPolicyV2(ctx, p.Spec.Name)
+		exists := err == nil
+		if exists && !p.Spec.Migrate {
+			err = fmt.Errorf("policy %s already exists", p.Spec.Name)
+		}
+		err = ignoreMadminErrorCode(err, "XMinioAdminNoSuchPolicy")
+		if exists && !p.Spec.Migrate {
+			return failure(err)
+		}
+
 		l.Info("marshal policy to json")
 		pd, err := json.Marshal(map[string]any{
 			"statement": p.Spec.Statement,
@@ -1107,6 +1177,7 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 		}
 
 		l.Info("set status")
+		p.Spec.Migrate = false
 		p.Status.CurrentSpec = &p.Spec
 		err = r.Update(ctx, p)
 		if err != nil {
@@ -1236,6 +1307,15 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 	if pb.Status.CurrentSpec != nil {
 		l.Info("check for policy binding change")
 
+		if pb.Spec.Migrate {
+			l.Info("remove migrate spec field")
+			pb.Spec.Migrate = false
+			err = r.Update(ctx, pb)
+			if err != nil {
+				return failure(err)
+			}
+		}
+
 		l.Info("get tenant admin client")
 		tr := pb.Status.CurrentSpec.TenantRef.SetDefaultNamespace(pb.GetNamespace())
 		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
@@ -1340,11 +1420,15 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 				User:     pb.Spec.User.Builtin,
 			})
 		}
+		if pb.Spec.Migrate {
+			err = ignoreMadminErrorCode(err, "XMinioAdminPolicyChangeAlreadyApplied")
+		}
 		if err != nil {
 			return failure(err)
 		}
 
 		l.Info("set status")
+		pb.Spec.Migrate = false
 		pb.Status.CurrentSpec = &pb.Spec
 		err = r.Update(ctx, pb)
 		if err != nil {
@@ -1453,6 +1537,15 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 	if u.Status.CurrentSpec != nil {
 		l.Info("check for user change")
 
+		if u.Spec.Migrate {
+			l.Info("remove migrate spec field")
+			u.Spec.Migrate = false
+			err = r.Update(ctx, u)
+			if err != nil {
+				return failure(err)
+			}
+		}
+
 		l.Info("get tenant admin client")
 		tr := u.Status.CurrentSpec.TenantRef.SetDefaultNamespace(u.GetNamespace())
 		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
@@ -1522,9 +1615,10 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 			return failure(err)
 		}
 
-		l.Info("check if minio user exists")
+		l.Info("get minio user")
 		_, err = mtac.GetUserInfo(ctx, u.Spec.AccessKey)
-		if err == nil {
+		exists := err == nil
+		if exists && !u.Spec.Migrate {
 			err = fmt.Errorf("user %s already exists", u.Spec.AccessKey)
 		}
 		err = ignoreMadminErrorCode(err, "XMinioAdminNoSuchUser")
@@ -1548,6 +1642,7 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 		}
 
 		l.Info("set status")
+		u.Spec.Migrate = false
 		u.Status.CurrentSpec = &u.Spec
 		u.Status.CurrentSecretKeyRefResourceVersion = us.GetResourceVersion()
 		err = r.Update(ctx, u)
