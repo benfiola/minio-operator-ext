@@ -85,15 +85,14 @@ In more complex scenarios, users might want the operator to manage existing Mini
 
 1. Model and deploy a _minio-operator-ext_ resource modelling the existing Minio object.
 2. Verify that the deployed resource _fails to reconcile_ because the operator detects that the resource already exists
-3. Patch/edit the resource with a _.spec.migrate_ set to _true_.  For example, you'd edit an existing _MinioBucket_ named 'a' with the following field:
+3. Patch/edit the resource - adding a new field, _.spec.migrate_, set to _true_.  For example, an edited resource might look like:
 ```yaml
 apiVersion: bfiola.dev/v1
 kind: MinioBucket
 ...
 spec:
   ...
-   name: a
-   migrate: true # <- add this
+  migrate: true # <- add this field
 ```
 4. The operator will acknowledge the _.spec.migrate_ field, ignore existence checks and 'take ownership' of the existing resource.
 5. The operator will delete the _.spec.migrate_ field - indicating that the operator now manages the resource.
