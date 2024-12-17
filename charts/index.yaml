@@ -2,8 +2,20 @@ apiVersion: v1
 entries:
   crds:
   - apiVersion: v2
+    appVersion: 2.3.0
+    created: "2024-12-17T23:08:58.281550822Z"
+    description: 'Deploys the custom resource definitions used by the minio-operator-ext
+      operator '
+    digest: 0545c35a865c26e7877b9b0a0157ebd2cb7cbbbf3703d6c5a4089b9fd02165be
+    home: https://github.com/benfiola/minio-operator-ext
+    name: crds
+    type: application
+    urls:
+    - https://benfiola.github.io/minio-operator-ext/charts/crds-2.3.0.tgz
+    version: 2.3.0
+  - apiVersion: v2
     appVersion: 2.3.0-rc.3
-    created: "2024-12-08T23:18:42.74785617Z"
+    created: "2024-12-17T23:08:58.28137207Z"
     description: 'Deploys the custom resource definitions used by the minio-operator-ext
       operator '
     digest: ddacb354fc150ecd0b6bd2249bfe66bda16aaa6341ee7be8bf039378627a4579
@@ -15,7 +27,7 @@ entries:
     version: 2.3.0-rc.3
   - apiVersion: v2
     appVersion: 2.3.0-rc.2
-    created: "2024-12-08T23:18:42.747697874Z"
+    created: "2024-12-17T23:08:58.281209458Z"
     description: 'Deploys the custom resource definitions used by the minio-operator-ext
       operator '
     digest: af8d5b0c9f3769903f429efc1b2ae492f46090e7dc17571acac527413951b543
@@ -27,7 +39,7 @@ entries:
     version: 2.3.0-rc.2
   - apiVersion: v2
     appVersion: 2.3.0-rc.1
-    created: "2024-12-08T23:18:42.74753533Z"
+    created: "2024-12-17T23:08:58.28103814Z"
     description: 'Deploys the custom resource definitions used by the minio-operator-ext
       operator '
     digest: 1f3b627a012d34b2c8f2a7a16ea3c19a563daad6e13f42a212d86c546a5f5b96
@@ -39,7 +51,7 @@ entries:
     version: 2.3.0-rc.1
   - apiVersion: v2
     appVersion: 2.3.0-alpha.1+support-migrations
-    created: "2024-12-08T23:18:42.747373748Z"
+    created: "2024-12-17T23:08:58.280877862Z"
     description: 'Deploys the custom resource definitions used by the minio-operator-ext
       operator '
     digest: 045c83df4b8d4833144622f87190886e74940277abe01c8660d40db7db3471c9
@@ -51,7 +63,7 @@ entries:
     version: 2.3.0-alpha.1+support-migrations
   - apiVersion: v2
     appVersion: 2.2.3
-    created: "2024-12-08T23:18:42.747205012Z"
+    created: "2024-12-17T23:08:58.280705972Z"
     description: 'Deploys the custom resource definitions used by the minio-operator-ext
       operator '
     digest: c8d38a896df3e66a9cecfa82a3942e9194bc6419ce73cd48f3188674ee13175b
@@ -63,7 +75,7 @@ entries:
     version: 2.2.3
   - apiVersion: v2
     appVersion: 2.2.3-rc.2
-    created: "2024-12-08T23:18:42.74703806Z"
+    created: "2024-12-17T23:08:58.280536678Z"
     description: 'Deploys the custom resource definitions used by the minio-operator-ext
       operator '
     digest: f5a8ae51d5e6ff444ae428fc238f2790bc0c36d68e1d4061d7c8b55bbc76f200
@@ -75,7 +87,7 @@ entries:
     version: 2.2.3-rc.2
   - apiVersion: v2
     appVersion: 2.2.3-rc.1
-    created: "2024-12-08T23:18:42.746875756Z"
+    created: "2024-12-17T23:08:58.280345493Z"
     description: 'Deploys the custom resource definitions used by the minio-operator-ext
       operator '
     digest: 88f97d1b29ba23c50be0e3dbf496e5b42034f992a64109597caca6cdb5b2fe0e
@@ -87,7 +99,7 @@ entries:
     version: 2.2.3-rc.1
   - apiVersion: v2
     appVersion: 2.2.2
-    created: "2024-12-08T23:18:42.746699547Z"
+    created: "2024-12-17T23:08:58.280162633Z"
     description: 'Deploys the custom resource definitions used by the minio-operator-ext
       operator '
     digest: 878a762836ba693ab7f67670ee2cb7e2b09a05f69663fdfe589973c075a544c5
@@ -99,7 +111,7 @@ entries:
     version: 2.2.2
   - apiVersion: v2
     appVersion: 2.2.2-rc.1
-    created: "2024-12-08T23:18:42.746386942Z"
+    created: "2024-12-17T23:08:58.279978701Z"
     description: 'Deploys the custom resource definitions used by the minio-operator-ext
       operator '
     digest: 1ed9db85e5c4cc6f565936503b0b3ff9e13ce1d60c1461d56dfa313f4641128e
@@ -111,7 +123,7 @@ entries:
     version: 2.2.2-rc.1
   - apiVersion: v2
     appVersion: 2.2.2-alpha.3+generate-more-code
-    created: "2024-12-08T23:18:42.745970168Z"
+    created: "2024-12-17T23:08:58.279798447Z"
     description: 'Deploys the custom resource definitions used by the minio-operator-ext
       operator '
     digest: b6165b32af4b75bfb37a01888a6e3bd6de9bff494ea6827a71c125609984fa30
@@ -123,7 +135,7 @@ entries:
     version: 2.2.2-alpha.3+generate-more-code
   - apiVersion: v2
     appVersion: 2.2.2-alpha.2+generate-more-code
-    created: "2024-12-08T23:18:42.745467518Z"
+    created: "2024-12-17T23:08:58.279629893Z"
     description: 'Deploys the custom resource definitions used by the minio-operator-ext
       operator '
     digest: b02d8079f1bf2795be4d739c106062e4c4e5334dd67aefab9a792c0e35078b50
@@ -135,7 +147,7 @@ entries:
     version: 2.2.2-alpha.2+generate-more-code
   - apiVersion: v2
     appVersion: 2.2.1-rc.4
-    created: "2024-12-08T23:18:42.745297129Z"
+    created: "2024-12-17T23:08:58.279407661Z"
     description: 'Deploys the custom resource definitions used by the minio-operator-ext
       operator '
     digest: a111cf0729b7be5ce65b7204bcb621a0f94738187ec1d14d64d29ed0bc07186a
@@ -147,7 +159,7 @@ entries:
     version: 2.2.1-rc.4
   - apiVersion: v2
     appVersion: 2.2.1-rc.3
-    created: "2024-12-08T23:18:42.745148832Z"
+    created: "2024-12-17T23:08:58.27924593Z"
     description: 'Deploys the custom resource definitions used by the minio-operator-ext
       operator '
     digest: 8590ed7efbfe1cb45c7439a0e789eaef7167bf7b745e10c43f455fe61e6d3228
@@ -159,7 +171,7 @@ entries:
     version: 2.2.1-rc.3
   - apiVersion: v2
     appVersion: 2.2.1-rc.2
-    created: "2024-12-08T23:18:42.744996648Z"
+    created: "2024-12-17T23:08:58.279088067Z"
     description: 'Deploys the custom resource definitions used by the minio-operator-ext
       operator '
     digest: 7d3f034f881c7775c575aa2b72224c581bf75ae50a5d72971b28ae82c8a4d280
@@ -171,7 +183,7 @@ entries:
     version: 2.2.1-rc.2
   - apiVersion: v2
     appVersion: 2.2.0
-    created: "2024-12-08T23:18:42.744844022Z"
+    created: "2024-12-17T23:08:58.278916288Z"
     description: 'Deploys the custom resource definitions used by the minio-operator-ext
       operator '
     digest: 43bcfa2057db5d063dd6c1a22ce5e6d397dc31c03c8402a51cb436a4ad753b15
@@ -183,7 +195,7 @@ entries:
     version: 2.2.0
   - apiVersion: v2
     appVersion: 2.2.0-rc.8
-    created: "2024-12-08T23:18:42.744691567Z"
+    created: "2024-12-17T23:08:58.278713041Z"
     description: 'Deploys the custom resource definitions used by the minio-operator-ext
       operator '
     digest: 134f21968e037a46f4d055da120b6ce2a661acfcaa62e4aa92d0c0f919d0a40c
@@ -195,7 +207,7 @@ entries:
     version: 2.2.0-rc.8
   - apiVersion: v2
     appVersion: 2.2.0-rc.7
-    created: "2024-12-08T23:18:42.74452215Z"
+    created: "2024-12-17T23:08:58.278310585Z"
     description: 'Deploys the custom resource definitions used by the minio-operator-ext
       operator '
     digest: eb1457d65dff36fe610bbbc8ccf00ba8c8ad4b49eff49edc8e3e4c71c8d50ecf
@@ -207,7 +219,7 @@ entries:
     version: 2.2.0-rc.7
   - apiVersion: v2
     appVersion: 2.2.0-rc.6
-    created: "2024-12-08T23:18:42.744358304Z"
+    created: "2024-12-17T23:08:58.278018372Z"
     description: 'Deploys the custom resource definitions used by the minio-operator-ext
       operator '
     digest: b6bb75faca94e92144f80ebb456fcb050ad07e13eb6c4e0477b4e079d6612265
@@ -219,7 +231,7 @@ entries:
     version: 2.2.0-rc.6
   - apiVersion: v2
     appVersion: 2.2.0-rc.1
-    created: "2024-12-08T23:18:42.744162428Z"
+    created: "2024-12-17T23:08:58.27748446Z"
     description: Deploy custom resource definitions for Minio Operator Ext
     digest: ca47f612708ef5e91b34f0f9c93a00f7b3e5d3ea91c83421f5f091d39111d563
     name: crds
@@ -229,7 +241,7 @@ entries:
     version: 2.2.0-rc.1
   - apiVersion: v2
     appVersion: 2.2.0-alpha.13+post-helm
-    created: "2024-12-08T23:18:42.743773059Z"
+    created: "2024-12-17T23:08:58.277138848Z"
     description: 'Deploys the custom resource definitions used by the minio-operator-ext
       operator '
     digest: 94d910d99b896a10adadbb5cd6d8d122d0f1ac30fbda184ab521bb6476e2cbc6
@@ -241,7 +253,7 @@ entries:
     version: 2.2.0-alpha.13+post-helm
   - apiVersion: v2
     appVersion: 2.1.1-rc.4
-    created: "2024-12-08T23:18:42.743592682Z"
+    created: "2024-12-17T23:08:58.276954215Z"
     description: A Helm chart for Kubernetes
     digest: ef8ff619e988b1930bcd66fe34815ab7b81ab3e514ee4f30210062a451283f1c
     name: crds
@@ -251,7 +263,7 @@ entries:
     version: 2.1.1-rc.4
   - apiVersion: v2
     appVersion: 2.1.1-rc.3
-    created: "2024-12-08T23:18:42.743224233Z"
+    created: "2024-12-17T23:08:58.276585941Z"
     description: A Helm chart for Kubernetes
     digest: aec9e4645f691e2d14ea0a34d2b658a3953c9ccb0bbfdbf692415fb6c9b9fb85
     name: crds
@@ -261,7 +273,7 @@ entries:
     version: 2.1.1-rc.3
   - apiVersion: v2
     appVersion: 2.1.1-rc.2
-    created: "2024-12-08T23:18:42.742844223Z"
+    created: "2024-12-17T23:08:58.276027163Z"
     description: A Helm chart for Kubernetes
     digest: 9c395cc95ea23ab509026db7b1481b5df276628af59ac3ddf033552e3414cd58
     name: crds
@@ -271,8 +283,20 @@ entries:
     version: 2.1.1-rc.2
   operator:
   - apiVersion: v2
+    appVersion: 2.3.0
+    created: "2024-12-17T23:08:58.290971122Z"
+    description: 'Deploy minio-operator-ext, an operator that allows for declarative
+      management of MinIO resources '
+    digest: b232ea1450835c3284f4a14bdb9f807a02e03b8381d84b90bc4c567138ac57a9
+    home: https://github.com/benfiola/minio-operator-ext
+    name: operator
+    type: application
+    urls:
+    - https://benfiola.github.io/minio-operator-ext/charts/operator-2.3.0.tgz
+    version: 2.3.0
+  - apiVersion: v2
     appVersion: 2.3.0-rc.3
-    created: "2024-12-08T23:18:42.756127568Z"
+    created: "2024-12-17T23:08:58.290632323Z"
     description: 'Deploy minio-operator-ext, an operator that allows for declarative
       management of MinIO resources '
     digest: 36e8f5c20acbc2b6472874a0ce15b51ede1d1054039dc2325ea1b7d8650c1269
@@ -284,7 +308,7 @@ entries:
     version: 2.3.0-rc.3
   - apiVersion: v2
     appVersion: 2.3.0-rc.2
-    created: "2024-12-08T23:18:42.755797371Z"
+    created: "2024-12-17T23:08:58.289924162Z"
     description: 'Deploy minio-operator-ext, an operator that allows for declarative
       management of MinIO resources '
     digest: 694a1b5ec0cb5cf0ac11fc1a57132453724aade9daa7f90e31488e27092312f7
@@ -296,7 +320,7 @@ entries:
     version: 2.3.0-rc.2
   - apiVersion: v2
     appVersion: 2.3.0-rc.1
-    created: "2024-12-08T23:18:42.755499223Z"
+    created: "2024-12-17T23:08:58.289251713Z"
     description: 'Deploy minio-operator-ext, an operator that allows for declarative
       management of MinIO resources '
     digest: 4192397091ec1fadd250327a9e68b53ada9204063ec875abc6a568d29d4d8349
@@ -308,7 +332,7 @@ entries:
     version: 2.3.0-rc.1
   - apiVersion: v2
     appVersion: 2.3.0-alpha.1+support-migrations
-    created: "2024-12-08T23:18:42.75519811Z"
+    created: "2024-12-17T23:08:58.288950714Z"
     description: 'Deploy minio-operator-ext, an operator that allows for declarative
       management of MinIO resources '
     digest: 2d1adbf478d6ad5a7e57fa6d33ff653552119c348d254f289f8c678b389fe7e5
@@ -320,7 +344,7 @@ entries:
     version: 2.3.0-alpha.1+support-migrations
   - apiVersion: v2
     appVersion: 2.2.3
-    created: "2024-12-08T23:18:42.754890956Z"
+    created: "2024-12-17T23:08:58.288636671Z"
     description: 'Deploy minio-operator-ext, an operator that allows for declarative
       management of MinIO resources '
     digest: f6f83b053fcd47ca476722134e0b149f61c66f0698dd34a4d2bffcd97c4ff47d
@@ -332,7 +356,7 @@ entries:
     version: 2.2.3
   - apiVersion: v2
     appVersion: 2.2.3-rc.2
-    created: "2024-12-08T23:18:42.754589733Z"
+    created: "2024-12-17T23:08:58.288309844Z"
     description: 'Deploy minio-operator-ext, an operator that allows for declarative
       management of MinIO resources '
     digest: 6035030f8b91ab26e10a1115958a49e045e017c0ccc73d6d045c2e96ee369a5f
@@ -344,7 +368,7 @@ entries:
     version: 2.2.3-rc.2
   - apiVersion: v2
     appVersion: 2.2.3-rc.1
-    created: "2024-12-08T23:18:42.754287347Z"
+    created: "2024-12-17T23:08:58.28800623Z"
     description: 'Deploy minio-operator-ext, an operator that allows for declarative
       management of MinIO resources '
     digest: 7b8955baa81cbcfceaade787057b3b47abe0705a96cd45d2cadad573ae68837f
@@ -356,7 +380,7 @@ entries:
     version: 2.2.3-rc.1
   - apiVersion: v2
     appVersion: 2.2.2
-    created: "2024-12-08T23:18:42.753982257Z"
+    created: "2024-12-17T23:08:58.287690654Z"
     description: 'Deploy minio-operator-ext, an operator that allows for declarative
       management of MinIO resources '
     digest: 49d3fec32846e5f1ce1eb96e3f35923afde92c4093c62550ec79e19ea3dcc2f4
@@ -368,7 +392,7 @@ entries:
     version: 2.2.2
   - apiVersion: v2
     appVersion: 2.2.2-rc.1
-    created: "2024-12-08T23:18:42.753675974Z"
+    created: "2024-12-17T23:08:58.287355581Z"
     description: 'Deploy minio-operator-ext, an operator that allows for declarative
       management of MinIO resources '
     digest: 208e122eb2c9220d685d400453b1dff8bf78be1610ece097db9ae52d41b70049
@@ -380,7 +404,7 @@ entries:
     version: 2.2.2-rc.1
   - apiVersion: v2
     appVersion: 2.2.2-alpha.3+generate-more-code
-    created: "2024-12-08T23:18:42.753364041Z"
+    created: "2024-12-17T23:08:58.287049623Z"
     description: 'Deploy minio-operator-ext, an operator that allows for declarative
       management of MinIO resources '
     digest: 764c2a3f2563dc3ba4df6f13a9e214d7bb5948f9e6844813e0b80ceacefdaeab
@@ -392,7 +416,7 @@ entries:
     version: 2.2.2-alpha.3+generate-more-code
   - apiVersion: v2
     appVersion: 2.2.2-alpha.2+generate-more-code
-    created: "2024-12-08T23:18:42.75304807Z"
+    created: "2024-12-17T23:08:58.286725471Z"
     description: 'Deploy minio-operator-ext, an operator that allows for declarative
       management of MinIO resources '
     digest: 2af861886d4485f51bfe3d54865111d3f17207d2cac77c1a5b42faef02ca31a9
@@ -404,7 +428,7 @@ entries:
     version: 2.2.2-alpha.2+generate-more-code
   - apiVersion: v2
     appVersion: 2.2.1-rc.4
-    created: "2024-12-08T23:18:42.752722441Z"
+    created: "2024-12-17T23:08:58.286179727Z"
     description: 'Deploy minio-operator-ext, an operator that allows for declarative
       management of MinIO resources '
     digest: b6fa847ea5b1d4326775b85115008dc45ddc9603b68513f23a1049cdedfc4aea
@@ -416,7 +440,7 @@ entries:
     version: 2.2.1-rc.4
   - apiVersion: v2
     appVersion: 2.2.1-rc.3
-    created: "2024-12-08T23:18:42.752206604Z"
+    created: "2024-12-17T23:08:58.285884519Z"
     description: 'Deploy minio-operator-ext, an operator that allows for declarative
       management of MinIO resources '
     digest: caaba395bc7f3bd1771c277cb60060349c60aeb15e72b5b488c8972f8a6cfab8
@@ -428,7 +452,7 @@ entries:
     version: 2.2.1-rc.3
   - apiVersion: v2
     appVersion: 2.2.1-rc.2
-    created: "2024-12-08T23:18:42.751378035Z"
+    created: "2024-12-17T23:08:58.28558365Z"
     description: 'Deploy minio-operator-ext, an operator that allows for declarative
       management of MinIO resources '
     digest: fcb65f8836281f5319ddacd3abec483aa5504dc0df1afb93dd942484689b0e4c
@@ -440,7 +464,7 @@ entries:
     version: 2.2.1-rc.2
   - apiVersion: v2
     appVersion: 2.2.0
-    created: "2024-12-08T23:18:42.751068767Z"
+    created: "2024-12-17T23:08:58.285265649Z"
     description: 'Deploy minio-operator-ext, an operator that allows for declarative
       management of MinIO resources '
     digest: cffec12313cd99eea4b7f3817c877ee512a553ff3542ef397d1d9c14de702286
@@ -452,7 +476,7 @@ entries:
     version: 2.2.0
   - apiVersion: v2
     appVersion: 2.2.0-rc.8
-    created: "2024-12-08T23:18:42.750748828Z"
+    created: "2024-12-17T23:08:58.284965662Z"
     description: 'Deploy minio-operator-ext, an operator that allows for declarative
       management of MinIO resources '
     digest: 1b40c34bfee174d6c8c77412b68d298eecb5bd0d1d2721a3f4a565e200882af7
@@ -464,7 +488,7 @@ entries:
     version: 2.2.0-rc.8
   - apiVersion: v2
     appVersion: 2.2.0-rc.7
-    created: "2024-12-08T23:18:42.750191707Z"
+    created: "2024-12-17T23:08:58.284659403Z"
     description: 'Deploy minio-operator-ext, an operator that allows for declarative
       management of MinIO resources '
     digest: cd21998524e47a63d95a5a1b52e863d91d6b4853d44fee3c3aec57e7d123d910
@@ -476,7 +500,7 @@ entries:
     version: 2.2.0-rc.7
   - apiVersion: v2
     appVersion: 2.2.0-rc.6
-    created: "2024-12-08T23:18:42.749883871Z"
+    created: "2024-12-17T23:08:58.284314502Z"
     description: 'Deploy minio-operator-ext, an operator that allows for declarative
       management of MinIO resources '
     digest: 59a0562d8d6929f3ee0c8ee00fd6c7bed537f98746f5ed172d657756f0453c98
@@ -488,7 +512,7 @@ entries:
     version: 2.2.0-rc.6
   - apiVersion: v2
     appVersion: 2.2.0-rc.1
-    created: "2024-12-08T23:18:42.749581205Z"
+    created: "2024-12-17T23:08:58.283999677Z"
     description: Deploy minio-operator-ext, an operator that allows for declarative
       management of MinIO resources
     digest: 759a21ff80891af26ee527b27f31d783ddaa333ba5f8fb4f0a816cf66285697f
@@ -499,7 +523,7 @@ entries:
     version: 2.2.0-rc.1
   - apiVersion: v2
     appVersion: 2.2.0-alpha.13+post-helm
-    created: "2024-12-08T23:18:42.749263782Z"
+    created: "2024-12-17T23:08:58.283644397Z"
     description: 'Deploy minio-operator-ext, an operator that allows for declarative
       management of MinIO resources '
     digest: 94a8ed5fd216a22e2e8639024b0fa75df2ea67cf71cd1d36ceab4476a463456c
@@ -511,7 +535,7 @@ entries:
     version: 2.2.0-alpha.13+post-helm
   - apiVersion: v2
     appVersion: 2.1.1-rc.4
-    created: "2024-12-08T23:18:42.748953461Z"
+    created: "2024-12-17T23:08:58.282842331Z"
     description: A Helm chart for Kubernetes
     digest: 1fbf487c84740145b9af2f8e4bce3604f5d5d65003c47d39d1804f4875fc3dd0
     name: operator
@@ -521,7 +545,7 @@ entries:
     version: 2.1.1-rc.4
   - apiVersion: v2
     appVersion: 2.1.1-rc.3
-    created: "2024-12-08T23:18:42.748603978Z"
+    created: "2024-12-17T23:08:58.282272562Z"
     description: A Helm chart for Kubernetes
     digest: cd1ff8aeaaa3e9ed0cd260efc1275870bdaec0da8e5b937c304f424883ea73c0
     name: operator
@@ -531,7 +555,7 @@ entries:
     version: 2.1.1-rc.3
   - apiVersion: v2
     appVersion: 2.1.1-rc.2
-    created: "2024-12-08T23:18:42.748245948Z"
+    created: "2024-12-17T23:08:58.28191577Z"
     description: A Helm chart for Kubernetes
     digest: 760c023a1b6ef81b0de46c4b94e900df58b25e1abf6846387505c6e680f1c158
     name: operator
@@ -539,4 +563,4 @@ entries:
     urls:
     - https://benfiola.github.io/minio-operator-ext/charts/operator-2.1.1-rc.2.tgz
     version: 2.1.1-rc.2
-generated: "2024-12-08T23:18:42.742328168Z"
+generated: "2024-12-17T23:08:58.275483894Z"
