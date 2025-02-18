@@ -79,13 +79,14 @@ Some minio resource properties are ignored on update. This is done by design to 
 
 > [!CAUTION]
 >
-> The operator is designed to manage the entire lifecycle of its resources. This feature allows the operator to 'take ownership' of Minio objects it did not originally create.  Once the operator takes ownership of these existing Minio objects - it _can_ and _will_ modify them to match the state of its corresponding Kubernetes resources!
+> The operator is designed to manage the entire lifecycle of its resources. This feature allows the operator to 'take ownership' of Minio objects it did not originally create. Once the operator takes ownership of these existing Minio objects - it _can_ and _will_ modify them to match the state of its corresponding Kubernetes resources!
 
 In more complex scenarios, users might want the operator to manage existing Minio objects. To accomplish this:
 
 1. Model and deploy a _minio-operator-ext_ resource modelling the existing Minio object.
 2. Verify that the deployed resource _fails to reconcile_ because the operator detects that the resource already exists
-3. Patch/edit the resource - adding a new field, _.spec.migrate_, set to _true_.  For example, an edited resource might look like:
+3. Patch/edit the resource - adding a new field, _.spec.migrate_, set to _true_. For example, an edited resource might look like:
+
 ```yaml
 apiVersion: bfiola.dev/v1
 kind: MinioBucket
@@ -94,6 +95,7 @@ spec:
   ...
   migrate: true # <- add this field
 ```
+
 4. The operator will acknowledge the _.spec.migrate_ field, ignore existence checks and 'take ownership' of the existing resource.
 5. The operator will delete the _.spec.migrate_ field - indicating that the operator now manages the resource.
 

@@ -9,6 +9,8 @@
 
 # ignore generated assets
 charts/crds/generated
+charts/crds/LICENSE
 charts/operator/generated
+charts/operator/LICENSE
 internal/embed/**/*
 !internal/embed/empty.txt
