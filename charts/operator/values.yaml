@@ -46,12 +46,15 @@ podSecurityContext:
 
 # -- Sets the operator deployment's security context
 securityContext:
+  allowPrivilegeEscalation: false
   capabilities:
     drop:
       - ALL
   readOnlyRootFilesystem: true
   runAsNonRoot: true
   runAsUser: 65534
+  seccompProfile:
+    type: RuntimeDefault
 
 # -- Sets the operator pod's resource requests and limits
 resources:
