@@ -227,10 +227,7 @@ func getMinioTenantClientInfo(ctx context.Context, c client.Client, rr v1.Resour
 	}
 
 	// determine if tenant secure
-	s := true
-	if t.Spec.RequestAutoCert != nil {
-		s = *t.Spec.RequestAutoCert
-	}
+	s := t.TLS()
 
 	// obtain access + secret key
 	ts := &corev1.Secret{}
