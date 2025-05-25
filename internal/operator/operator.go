@@ -23,7 +23,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"io"
 	"log/slog"
@@ -209,7 +208,7 @@ type minioTenantClientInfo struct {
 
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get
-// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list
 // +kubebuilder:rbac:groups=minio.min.io,resources=tenants,verbs=get
 
 // Returns [minioTenantClientInfo] for a [miniov2.Tenant] referenced by [v1.ResourceRef].
@@ -227,9 +226,11 @@ func getMinioTenantClientInfo(ctx context.Context, c client.Client, rr v1.Resour
 	}
 
 	// determine if tenant secure
-	s := true
-	if t.Spec.RequestAutoCert != nil {
-		s = *t.Spec.RequestAutoCert
+	s := false
+	if t.Spec.RequestAutoCert != nil && *t.Spec.RequestAutoCert {
+		s = true
+	} else if len(t.Spec.ExternalCertSecret) > 0 {
+		s = true
 	}
 
 	// obtain access + secret key
@@ -281,25 +282,61 @@ func getMinioTenantClientInfo(ctx context.Context, c client.Client, rr v1.Resour
 		return nil, fmt.Errorf("endpoint for minio service %s/%s not found", tsvc.Namespace, tsvc.Name)
 	}
 
-	// obtain ca bundle
-	krccm := &corev1.ConfigMap{}
-	err = c.Get(ctx, types.NamespacedName{Namespace: rr.Namespace, Name: "kube-root-ca.crt"}, krccm)
+	// create cert pool for tls verification
+	cbp, err := x509.SystemCertPool()
 	if err != nil {
-		return nil, err
+		cbp = x509.NewCertPool()
 	}
-	cb, ok := krccm.Data["ca.crt"]
-	if !ok {
-		return nil, fmt.Errorf("kube root ca for %s not found", rr.Namespace)
+	ks := []string{"public.crt", "tls.crt", "ca.crt"}
+	// pod CA
+	pcacm := &corev1.ConfigMap{}
+	err = c.Get(ctx, types.NamespacedName{Namespace: rr.Namespace, Name: "kube-root-ca.crt"}, pcacm)
+	if err == nil {
+		for _, k := range ks {
+			cas, ok := pcacm.Data[k]
+			if !ok {
+				continue
+			}
+			ca := []byte(cas)
+			cbp.AppendCertsFromPEM(ca)
+		}
 	}
-
-	// create cert pool with ca bundle
-	cbp := x509.NewCertPool()
-	cbb, _ := pem.Decode([]byte(cb))
-	cbc, err := x509.ParseCertificate(cbb.Bytes)
-	if err != nil {
-		return nil, err
+	// CAs from secrets prefixed with 'operator-ca-tls'
+	sl := &corev1.SecretList{}
+	err = c.List(ctx, sl, client.InNamespace(rr.Namespace))
+	if err == nil {
+		for _, s := range sl.Items {
+			if !strings.HasPrefix(s.Name, "operator-ca-tls") {
+				continue
+			}
+			for _, k := range ks {
+				cas, ok := s.Data[k]
+				if !ok {
+					continue
+				}
+				ca := []byte(cas)
+				cbp.AppendCertsFromPEM(ca)
+			}
+		}
 	}
-	cbp.AddCert(cbc)
+	// CAs from configured external sources
+	for _, eca := range t.Spec.ExternalCaCertSecret {
+		if eca.Type == "kubernetes.io/tls" {
+			s := &corev1.Secret{}
+			err := c.Get(ctx, types.NamespacedName{Namespace: t.Namespace, Name: eca.Name}, s)
+			if err != nil {
+				continue
+			}
+			for _, k := range ks {
+				cas, ok := s.Data[k]
+				if !ok {
+					continue
+				}
+				ca := []byte(cas)
+				cbp.AppendCertsFromPEM(ca)
+			}
+		}
+	}
 
 	return &minioTenantClientInfo{
 		AccessKey: ak,

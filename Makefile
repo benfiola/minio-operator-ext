@@ -19,6 +19,10 @@ ifeq ($(ALTARCH),amd64)
 	ALTARCH = x86_64
 endif
 
+CERT_MANAGER_MANIFEST = $(ASSETS)/cert-manager.yaml
+CERT_MANAGER_MANIFEST_SRC = $(DEV)/manifests/cert-manager
+CERT_MANAGER_RESOURCES_MANIFEST = $(ASSETS)/cert-manager-resources.yaml
+CERT_MANAGER_RESOURCES_MANIFEST_SRC = $(DEV)/manifests/cert-manager-resources
 CONTROLLER_GEN = $(ASSETS)/controller-gen
 CONTROLLER_GEN_URL = https://github.com/kubernetes-sigs/controller-tools/releases/download/v$(CONTROLLER_GEN_VERSION)/controller-gen-$(OS)-$(ARCH)
 CRANE = $(ASSETS)/crane
@@ -218,7 +222,9 @@ $(MINIKUBE): | $(ASSETS)
 # MANIFESTS
 
 .PHONY: apply-manifests
-apply-manifests: $(CRDS_MANIFEST) $(KUBECTL) $(MINIO_OPERATOR_MANIFEST) $(MINIO_TENANT_MANIFEST) $(OPENLDAP_MANIFEST)
+apply-manifests: $(CERT_MANAGER_MANIFEST) $(CERT_MANAGER_RESOURCES_MANIFEST) $(CRDS_MANIFEST) $(KUBECTL) $(MINIO_OPERATOR_MANIFEST) $(MINIO_TENANT_MANIFEST) $(OPENLDAP_MANIFEST)
+	# deploy cert-manager
+	$(KUBECTL_CMD) apply -f $(CERT_MANAGER_MANIFEST)
 	# deploy minio operator
 	$(KUBECTL_CMD) apply -f $(MINIO_OPERATOR_MANIFEST)
 	# deploy minio tenant
@@ -227,6 +233,14 @@ apply-manifests: $(CRDS_MANIFEST) $(KUBECTL) $(MINIO_OPERATOR_MANIFEST) $(MINIO_
 	$(KUBECTL_CMD) apply -f $(OPENLDAP_MANIFEST)
 	# deploy crds
 	$(KUBECTL_CMD) apply -f $(CRDS_MANIFEST)
+
+$(CERT_MANAGER_MANIFEST): $(KUBECTL) $(HELM) | $(ASSETS)
+	# generate cert-manager manifest
+	$(KUSTOMIZE_CMD) $(CERT_MANAGER_MANIFEST_SRC) > $(CERT_MANAGER_MANIFEST)
+
+$(CERT_MANAGER_RESOURCES_MANIFEST): $(KUBECTL) $(HELM) | $(ASSETS)
+	# generate cert-manager resources manifest
+	$(KUSTOMIZE_CMD) $(CERT_MANAGER_RESOURCES_MANIFEST_SRC) > $(CERT_MANAGER_RESOURCES_MANIFEST)
 
 $(CRDS_MANIFEST): generate $(KUBECTL) $(HELM) | $(ASSETS)
 	# generate crds manifest
