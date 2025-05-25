@@ -1,0 +1,16 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: cm-tenant-ca
+spec:
+  isCA: true
+  commonName: cm-tenant
+  secretName: cm-tenant-ca-tls
+  duration: 70128h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: cm-root
+    kind: ClusterIssuer
+    group: cert-manager.io

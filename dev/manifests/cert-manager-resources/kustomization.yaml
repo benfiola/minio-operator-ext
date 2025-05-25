@@ -1,0 +1,5 @@
+resources:
+  - ./root-issuer.yaml
+  - ./tenant-ca.yaml
+  - ./tenant-issuer.yaml
+  - ./tenant-cert.yaml
