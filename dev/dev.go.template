@@ -17,6 +17,7 @@ func runOperator() error {
 	o, err := operator.New(&operator.Opts{
 		Logger:     l,
 		KubeConfig: filepath.Join("..", ".dev", "kube-config.yaml"),
+		MinioOperatorNamespace: "default",
 	})
 	if err != nil {
 		return err

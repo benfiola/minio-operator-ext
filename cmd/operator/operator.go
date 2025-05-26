@@ -87,6 +87,12 @@ func main() {
 						EnvVars: []string{"MINIO_OPERATOR_EXT_KUBE_CONFIG"},
 						Value:   "",
 					},
+					&cli.StringFlag{
+						Name:    "minio-operator-namespace",
+						Usage:   "namespace of MinIO operator",
+						EnvVars: []string{"MINIO_OPERATOR_EXT_MINIO_OPERATOR_NAMESPACE"},
+						Value:   "",
+					},
 				},
 				Action: func(c *cli.Context) error {
 					l, ok := c.Context.Value(ContextLogger{}).(*slog.Logger)
@@ -95,8 +101,9 @@ func main() {
 					}
 
 					s, err := operator.New(&operator.Opts{
-						KubeConfig: c.String("kube-config"),
-						Logger:     l,
+						KubeConfig:             c.String("kube-config"),
+						Logger:                 l,
+						MinioOperatorNamespace: c.String("minio-operator-namespace"),
 					})
 					if err != nil {
 						return err
