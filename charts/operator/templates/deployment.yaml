@@ -37,6 +37,15 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - run
+          env:
+            {{- if .Values.logLevel }}
+            - name: MINIO_OPERATOR_EXT_LOG_LEVEL
+              value: "{{ .Values.logLevel }}"
+            {{- end }}
+            {{- if .Values.minioOperatorNamespace }}
+            - name: MINIO_OPERATOR_EXT_MINIO_OPERATOR_NAMESPACE
+              value: "{{ .Values.minioOperatorNamespace }}"
+            {{- end }}
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:

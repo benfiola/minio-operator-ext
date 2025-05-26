@@ -23,7 +23,7 @@ Examples of these resources can be found [here](./manifests/example-resources.ya
 >
 > Read [this](https://github.com/benfiola/minio-operator-ext/issues/16#issuecomment-2401553200) if you are updating from version 1.X.X to version 2.X.X of the operator.
 
-Use [helm](https://helm.sh/) to install the operator:
+Use [helm](https://helm.sh/) to install the operator in the same namespace as the MinIO operator itself. If _minio-operator-ext_ is not deployed to the same namespace as the MinIO operator - you must provide the `minio-operator-namespace` setting as defined below in the 'Configuration' section.
 
 ```shell
 # add the minio-operator-ext helm chart repository
@@ -40,12 +40,15 @@ Documentation for these helm charts can be found [here](https://benfiola.github.
 
 The operator is hosted on docker hub and can be found at [docker.io/benfiola/minio-operator-ext](https://hub.docker.com/r/benfiola/minio-operator-ext).
 
+### Configuration
+
 The following arguments/environment variables configure the operator:
 
-| CLI             | Env                              | Default | Description                                                                      |
-| --------------- | -------------------------------- | ------- | -------------------------------------------------------------------------------- |
-| _--log-level_   | _MINIO_OPERATOR_EXT_LOG_LEVEL_   | `info`  | Logging verbosity for the operator                                               |
-| _--kube-config_ | _MINIO_OPERATOR_EXT_KUBE_CONFIG_ | `null`  | Optional path to a kubeconfig file. When omitted, uses in-cluster configuration. |
+| CLI                          | Env                                           | Helm Chart               | Default | Description                                                                      |
+| ---------------------------- | --------------------------------------------- | ------------------------ | ------- | -------------------------------------------------------------------------------- |
+| _--log-level_                | _MINIO_OPERATOR_EXT_LOG_LEVEL_                | _logLevel_               | `info`  | Logging verbosity for the operator                                               |
+| _--kube-config_              | _MINIO_OPERATOR_EXT_KUBE_CONFIG_              |                          | `null`  | Optional path to a kubeconfig file. When omitted, uses in-cluster configuration. |
+| _--minio-operator-namespace_ | _MINIO_OPERATOR_EXT_MINIO_OPERATOR_NAMESPACE_ | _minioOperatorNamespace_ | ``      | Namespace of MinIO operator. When omitted, uses _minio-operator-ext_ namespace.  |
 
 ### RBAC
 

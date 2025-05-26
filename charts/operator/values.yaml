@@ -99,3 +99,9 @@ tolerations: []
 
 # -- Specify which node's affinities operator workloads will prefer
 affinity: {}
+
+# -- Specify the operator's log level
+logLevel: ""
+
+# -- Specify the namespace of the MinIO Operator
+minioOperatorNamespace: ""

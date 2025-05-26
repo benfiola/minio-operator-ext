@@ -32,8 +32,9 @@ type Main struct {
 
 // Opts define the options used to create a new instance of [Main]
 type Opts struct {
-	Logger     *slog.Logger
-	KubeConfig string
+	Logger                 *slog.Logger
+	KubeConfig             string
+	MinioOperatorNamespace string
 }
 
 // Creates a new instance of [Main] with the provided [Opts].
@@ -45,8 +46,9 @@ func New(o *Opts) (*Main, error) {
 
 	klog.SetSlogLogger(l.With("name", "klog"))
 	op, err := NewOperator(&OperatorOpts{
-		Logger:     l.With("name", "operator"),
-		KubeConfig: o.KubeConfig,
+		Logger:                 l.With("name", "operator"),
+		KubeConfig:             o.KubeConfig,
+		MinioOperatorNamespace: o.MinioOperatorNamespace,
 	})
 	if err != nil {
 		return nil, err

@@ -27,6 +27,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -106,9 +107,10 @@ type operator struct {
 
 // OperatorOpts defines the options used to construct a new [operator]
 type OperatorOpts struct {
-	KubeConfig   string
-	Logger       *slog.Logger
-	SyncInterval time.Duration
+	KubeConfig             string
+	Logger                 *slog.Logger
+	MinioOperatorNamespace string
+	SyncInterval           time.Duration
 }
 
 // Creates a new operator with the provided [OperatorOpts].
@@ -121,6 +123,17 @@ func NewOperator(o *OperatorOpts) (*operator, error) {
 	c, err := clientcmd.BuildConfigFromFlags("", o.KubeConfig)
 	if err != nil {
 		return nil, err
+	}
+
+	mon := o.MinioOperatorNamespace
+	if mon == "" {
+		d, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+		if err == nil {
+			mon = string(d)
+		}
+	}
+	if mon == "" {
+		return nil, fmt.Errorf("minio operator namespace is not defined")
 	}
 
 	si := o.SyncInterval
@@ -164,12 +177,12 @@ func NewOperator(o *OperatorOpts) (*operator, error) {
 	}
 
 	rs := []reconciler{
-		&minioBucketReconciler{syncInterval: si},
-		&minioGroupReconciler{syncInterval: si},
-		&minioGroupBindingReconciler{syncInterval: si},
-		&minioPolicyReconciler{syncInterval: si},
-		&minioPolicyBindingReconciler{syncInterval: si},
-		&minioUserReconciler{syncInterval: si},
+		&minioBucketReconciler{minioOperatorNamespace: mon, syncInterval: si},
+		&minioGroupReconciler{minioOperatorNamespace: mon, syncInterval: si},
+		&minioGroupBindingReconciler{minioOperatorNamespace: mon, syncInterval: si},
+		&minioPolicyReconciler{minioOperatorNamespace: mon, syncInterval: si},
+		&minioPolicyBindingReconciler{minioOperatorNamespace: mon, syncInterval: si},
+		&minioUserReconciler{minioOperatorNamespace: mon, syncInterval: si},
 	}
 	for _, r := range rs {
 		err = r.register(m)
@@ -197,6 +210,11 @@ func (o *operator) Run(ctx context.Context) error {
 	return o.manager.Start(ctx)
 }
 
+// minioTenantClientInfoOpts defines additional data used to modify the behavior around fetching tenant client information
+type minioTenantClientInfoOpts struct {
+	minioOperatorNamespace string
+}
+
 // minioTenantClientInfo defines the data required to instantiate a minio client from a given tenant.
 type minioTenantClientInfo struct {
 	AccessKey string
@@ -213,7 +231,7 @@ type minioTenantClientInfo struct {
 
 // Returns [minioTenantClientInfo] for a [miniov2.Tenant] referenced by [v1.ResourceRef].
 // Returns an error if unable to fetch tenant information.
-func getMinioTenantClientInfo(ctx context.Context, c client.Client, rr v1.ResourceRef) (*minioTenantClientInfo, error) {
+func getMinioTenantClientInfo(ctx context.Context, c client.Client, rr v1.ResourceRef, opts minioTenantClientInfoOpts) (*minioTenantClientInfo, error) {
 	if rr.Namespace == "" {
 		return nil, fmt.Errorf("namespace empty")
 	}
@@ -301,9 +319,9 @@ func getMinioTenantClientInfo(ctx context.Context, c client.Client, rr v1.Resour
 			cbp.AppendCertsFromPEM(ca)
 		}
 	}
-	// CAs from secrets prefixed with 'operator-ca-tls'
+	// CAs from secrets in minio operator namespace prefixed with 'operator-ca-tls'
 	sl := &corev1.SecretList{}
-	err = c.List(ctx, sl, client.InNamespace(rr.Namespace))
+	err = c.List(ctx, sl, client.InNamespace(opts.minioOperatorNamespace))
 	if err == nil {
 		for _, s := range sl.Items {
 			if !strings.HasPrefix(s.Name, "operator-ca-tls") {
@@ -319,11 +337,11 @@ func getMinioTenantClientInfo(ctx context.Context, c client.Client, rr v1.Resour
 			}
 		}
 	}
-	// CAs from configured external sources
+	// CAs from configured external sources deployed in minio operator namespace
 	for _, eca := range t.Spec.ExternalCaCertSecret {
 		if eca.Type == "kubernetes.io/tls" {
 			s := &corev1.Secret{}
-			err := c.Get(ctx, types.NamespacedName{Namespace: t.Namespace, Name: eca.Name}, s)
+			err := c.Get(ctx, types.NamespacedName{Namespace: opts.minioOperatorNamespace, Name: eca.Name}, s)
 			if err != nil {
 				continue
 			}
@@ -391,8 +409,9 @@ type reconciler interface {
 // minioBucketReconciler reconciles [v1.MinioBucket] resources
 type minioBucketReconciler struct {
 	client.Client
-	logger       logr.Logger
-	syncInterval time.Duration
+	logger                 logr.Logger
+	minioOperatorNamespace string
+	syncInterval           time.Duration
 }
 
 // Builds a controller with a [minioBucketReconciler].
@@ -432,7 +451,7 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 
 			l.Info("get tenant client")
 			tr := b.Status.CurrentSpec.TenantRef.SetDefaultNamespace(b.GetNamespace())
-			mtci, err := getMinioTenantClientInfo(ctx, r, tr)
+			mtci, err := getMinioTenantClientInfo(ctx, r, tr, minioTenantClientInfoOpts{minioOperatorNamespace: r.minioOperatorNamespace})
 			if err != nil {
 				return failure(err)
 			}
@@ -497,7 +516,7 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 
 		l.Info("get tenant client")
 		tr := b.Status.CurrentSpec.TenantRef.SetDefaultNamespace(b.GetNamespace())
-		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
+		mtci, err := getMinioTenantClientInfo(ctx, r, tr, minioTenantClientInfoOpts{minioOperatorNamespace: r.minioOperatorNamespace})
 		if err != nil {
 			return failure(err)
 		}
@@ -541,7 +560,7 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 
 		l.Info("get tenant client")
 		tr := b.Spec.TenantRef.SetDefaultNamespace(b.GetNamespace())
-		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
+		mtci, err := getMinioTenantClientInfo(ctx, r, tr, minioTenantClientInfoOpts{minioOperatorNamespace: r.minioOperatorNamespace})
 		if err != nil {
 			return failure(err)
 		}
@@ -576,8 +595,9 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 // minioGroupReconciler reconciles [v1.MinioGroup] resources
 type minioGroupReconciler struct {
 	client.Client
-	logger       logr.Logger
-	syncInterval time.Duration
+	logger                 logr.Logger
+	minioOperatorNamespace string
+	syncInterval           time.Duration
 }
 
 // Builds a controller with a [minioGroupReconciler].
@@ -617,7 +637,7 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 
 			l.Info("get tenant admin client")
 			tr := g.Status.CurrentSpec.TenantRef.SetDefaultNamespace(g.GetNamespace())
-			mtci, err := getMinioTenantClientInfo(ctx, r, tr)
+			mtci, err := getMinioTenantClientInfo(ctx, r, tr, minioTenantClientInfoOpts{minioOperatorNamespace: r.minioOperatorNamespace})
 			if err != nil {
 				return failure(err)
 			}
@@ -681,7 +701,7 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 
 		l.Info("get tenant admin client")
 		tr := g.Status.CurrentSpec.TenantRef.SetDefaultNamespace(g.GetNamespace())
-		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
+		mtci, err := getMinioTenantClientInfo(ctx, r, tr, minioTenantClientInfoOpts{minioOperatorNamespace: r.minioOperatorNamespace})
 		if err != nil {
 			return failure(err)
 		}
@@ -714,7 +734,7 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 
 		l.Info("get tenant admin client")
 		tr := g.Spec.TenantRef.SetDefaultNamespace(g.GetNamespace())
-		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
+		mtci, err := getMinioTenantClientInfo(ctx, r, tr, minioTenantClientInfoOpts{minioOperatorNamespace: r.minioOperatorNamespace})
 		if err != nil {
 			return failure(err)
 		}
@@ -760,8 +780,9 @@ func (r *minioGroupReconciler) Reconcile(ctx context.Context, req reconcile.Requ
 // minioGroupBindingReconciler reconciles [v1.MinioGroupBinding] resources
 type minioGroupBindingReconciler struct {
 	client.Client
-	logger       logr.Logger
-	syncInterval time.Duration
+	logger                 logr.Logger
+	minioOperatorNamespace string
+	syncInterval           time.Duration
 }
 
 // Builds a controller with a [minioGroupBindingReconciler].
@@ -796,7 +817,7 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 	deleteGroupMember := func() error {
 		l.Info("get tenant admin client")
 		tr := gb.Status.CurrentSpec.TenantRef.SetDefaultNamespace(gb.GetNamespace())
-		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
+		mtci, err := getMinioTenantClientInfo(ctx, r, tr, minioTenantClientInfoOpts{minioOperatorNamespace: r.minioOperatorNamespace})
 		if err != nil {
 			return err
 		}
@@ -875,7 +896,7 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 
 		l.Info("get tenant admin client")
 		tr := gb.Status.CurrentSpec.TenantRef.SetDefaultNamespace(gb.GetNamespace())
-		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
+		mtci, err := getMinioTenantClientInfo(ctx, r, tr, minioTenantClientInfoOpts{minioOperatorNamespace: r.minioOperatorNamespace})
 		if err != nil {
 			return failure(err)
 		}
@@ -917,7 +938,7 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 
 		l.Info("get tenant admin client")
 		tr := gb.Spec.TenantRef.SetDefaultNamespace(gb.GetNamespace())
-		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
+		mtci, err := getMinioTenantClientInfo(ctx, r, tr, minioTenantClientInfoOpts{minioOperatorNamespace: r.minioOperatorNamespace})
 		if err != nil {
 			return failure(err)
 		}
@@ -967,8 +988,9 @@ func (r *minioGroupBindingReconciler) Reconcile(ctx context.Context, req reconci
 // minioPolicyReconciler reconciles [v1.MinioPolicy] resources
 type minioPolicyReconciler struct {
 	client.Client
-	logger       logr.Logger
-	syncInterval time.Duration
+	logger                 logr.Logger
+	minioOperatorNamespace string
+	syncInterval           time.Duration
 }
 
 // Builds a controller with a [minioPolicyReconciler].
@@ -1042,7 +1064,7 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 
 			l.Info("get tenant client")
 			tr := p.Status.CurrentSpec.TenantRef.SetDefaultNamespace(p.GetNamespace())
-			mtci, err := getMinioTenantClientInfo(ctx, r, tr)
+			mtci, err := getMinioTenantClientInfo(ctx, r, tr, minioTenantClientInfoOpts{minioOperatorNamespace: r.minioOperatorNamespace})
 			if err != nil {
 				return failure(err)
 			}
@@ -1102,7 +1124,7 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 
 		l.Info("get tenant admin client")
 		tr := p.Status.CurrentSpec.TenantRef.SetDefaultNamespace(p.GetNamespace())
-		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
+		mtci, err := getMinioTenantClientInfo(ctx, r, tr, minioTenantClientInfoOpts{minioOperatorNamespace: r.minioOperatorNamespace})
 		if err != nil {
 			return failure(err)
 		}
@@ -1194,7 +1216,7 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 
 		l.Info("get tenant admin client")
 		tr := p.Spec.TenantRef.SetDefaultNamespace(p.GetNamespace())
-		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
+		mtci, err := getMinioTenantClientInfo(ctx, r, tr, minioTenantClientInfoOpts{minioOperatorNamespace: r.minioOperatorNamespace})
 		if err != nil {
 			return failure(err)
 		}
@@ -1246,8 +1268,9 @@ func (r *minioPolicyReconciler) Reconcile(ctx context.Context, req reconcile.Req
 // minioPolicyBindingReconciler reconciles [v1.MinioPolicyBinding] resources
 type minioPolicyBindingReconciler struct {
 	client.Client
-	logger       logr.Logger
-	syncInterval time.Duration
+	logger                 logr.Logger
+	minioOperatorNamespace string
+	syncInterval           time.Duration
 }
 
 // Builds a controller with a [minioPolicyBindingReconciler].
@@ -1282,7 +1305,7 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 	detachPolicyMember := func() error {
 		l.Info("get tenant admin client")
 		tr := pb.Status.CurrentSpec.TenantRef.SetDefaultNamespace(pb.GetNamespace())
-		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
+		mtci, err := getMinioTenantClientInfo(ctx, r, tr, minioTenantClientInfoOpts{minioOperatorNamespace: r.minioOperatorNamespace})
 		if err != nil {
 			return err
 		}
@@ -1371,7 +1394,7 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 
 		l.Info("get tenant admin client")
 		tr := pb.Status.CurrentSpec.TenantRef.SetDefaultNamespace(pb.GetNamespace())
-		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
+		mtci, err := getMinioTenantClientInfo(ctx, r, tr, minioTenantClientInfoOpts{minioOperatorNamespace: r.minioOperatorNamespace})
 		if err != nil {
 			return failure(err)
 		}
@@ -1449,7 +1472,7 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 
 		l.Info("get tenant admin client")
 		tr := pb.Spec.TenantRef.SetDefaultNamespace(pb.GetNamespace())
-		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
+		mtci, err := getMinioTenantClientInfo(ctx, r, tr, minioTenantClientInfoOpts{minioOperatorNamespace: r.minioOperatorNamespace})
 		if err != nil {
 			return failure(err)
 		}
@@ -1497,8 +1520,9 @@ func (r *minioPolicyBindingReconciler) Reconcile(ctx context.Context, req reconc
 // minioUserReconciler reconciles [v1.MinioUser] resources
 type minioUserReconciler struct {
 	client.Client
-	logger       logr.Logger
-	syncInterval time.Duration
+	logger                 logr.Logger
+	minioOperatorNamespace string
+	syncInterval           time.Duration
 }
 
 // Builds a controller with a [minioUserReconciler].
@@ -1540,7 +1564,7 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 
 			l.Info("get tenant admin client")
 			tr := u.Status.CurrentSpec.TenantRef.SetDefaultNamespace(u.GetNamespace())
-			mtci, err := getMinioTenantClientInfo(ctx, r, tr)
+			mtci, err := getMinioTenantClientInfo(ctx, r, tr, minioTenantClientInfoOpts{minioOperatorNamespace: r.minioOperatorNamespace})
 			if err != nil {
 				return failure(err)
 			}
@@ -1601,7 +1625,7 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 
 		l.Info("get tenant admin client")
 		tr := u.Status.CurrentSpec.TenantRef.SetDefaultNamespace(u.GetNamespace())
-		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
+		mtci, err := getMinioTenantClientInfo(ctx, r, tr, minioTenantClientInfoOpts{minioOperatorNamespace: r.minioOperatorNamespace})
 		if err != nil {
 			return failure(err)
 		}
@@ -1659,7 +1683,7 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 
 		l.Info("get tenant admin client")
 		tr := u.Spec.TenantRef.SetDefaultNamespace(u.GetNamespace())
-		mtci, err := getMinioTenantClientInfo(ctx, r, tr)
+		mtci, err := getMinioTenantClientInfo(ctx, r, tr, minioTenantClientInfoOpts{minioOperatorNamespace: r.minioOperatorNamespace})
 		if err != nil {
 			return failure(err)
 		}
