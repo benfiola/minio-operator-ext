@@ -4,6 +4,7 @@ go 1.22.5
 
 require (
 	github.com/go-logr/logr v1.4.2
+	github.com/google/go-cmp v0.7.0
 	github.com/hashicorp/go-envparse v0.1.0
 	github.com/minio/madmin-go/v3 v3.0.57
 	github.com/minio/minio-go/v7 v7.0.72
@@ -40,7 +41,6 @@ require (
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/gnostic-models v0.6.8 // indirect
-	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/imdario/mergo v0.3.16 // indirect

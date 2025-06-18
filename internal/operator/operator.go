@@ -23,6 +23,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"log/slog"
@@ -35,10 +36,13 @@ import (
 
 	v1 "github.com/benfiola/minio-operator-ext/pkg/api/bfiola.dev/v1"
 	"github.com/go-logr/logr"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/hashicorp/go-envparse"
 	"github.com/minio/madmin-go/v3"
 	minioclient "github.com/minio/minio-go/v7"
 	miniocredentials "github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/minio/minio-go/v7/pkg/lifecycle"
 	miniov2 "github.com/minio/operator/pkg/apis/minio.min.io/v2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -427,6 +431,41 @@ func (r *minioBucketReconciler) register(m manager.Manager) error {
 	return nil
 }
 
+// Converts src to dst by marshaling through XML and JSON.
+// Marshalling through JSON clears any XML-specific fields (e.g., XMLName)
+// Returns an error on failure.
+func convertViaXML[T any](src any, dst *T) error {
+	data, err := xml.Marshal(src)
+	if err != nil {
+		return err
+	}
+	var tmpv T
+	tmp := &tmpv
+	err = xml.Unmarshal(data, tmp)
+	if err != nil {
+		return err
+	}
+	data, err = json.Marshal(tmp)
+	if err != nil {
+		return err
+	}
+	err = json.Unmarshal(data, dst)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// Returns the value of a pointer to T.
+// If the value is nil, returns the zero value of the type.
+// This is used to facilitate equality checks where nil and the type's zero value are treated as equivalent.
+func nilToEmpty[T any](v *T) T {
+	if v == nil {
+		return reflect.Zero(reflect.TypeOf(v)).Interface().(T)
+	}
+	return *v
+}
+
 // +kubebuilder:rbac:groups=bfiola.dev,resources=miniobuckets,verbs=get;list;update;watch
 
 // Reconciles a [reconcile.Request] associated with a [v1.MinioBucket].
@@ -541,6 +580,102 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 			return success()
 		}
 
+		l.Info("get bucket versioning configuration")
+		bvc, err := mtc.GetBucketVersioning(ctx, b.Status.CurrentSpec.Name)
+		if err != nil {
+			return failure(err)
+		}
+		mbvc := &v1.MinioBucketVersioningConfiguration{}
+		err = convertViaXML(bvc, mbvc)
+		if err != nil {
+			return failure(err)
+		}
+		if !cmp.Equal(nilToEmpty(mbvc), nilToEmpty(b.Status.CurrentSpec.Versioning), cmpopts.EquateEmpty()) {
+			l.Info("bucket versioning configuration changed (status and remote differ)")
+
+			l.Info("set bucket versioning configuration")
+			bvc = minioclient.BucketVersioningConfiguration{}
+			err = convertViaXML(b.Status.CurrentSpec.Versioning, &bvc)
+			if err != nil {
+				return failure(err)
+			}
+			err = mtc.SetBucketVersioning(ctx, b.Status.CurrentSpec.Name, bvc)
+			if err != nil {
+				return failure(err)
+			}
+		}
+		if !reflect.DeepEqual(b.Spec.Versioning, b.Status.CurrentSpec.Versioning) {
+			l.Info("bucket versioning configuration changed (status and spec differ)")
+
+			l.Info("set bucket versioning configuration")
+			bvc = minioclient.BucketVersioningConfiguration{}
+			err = convertViaXML(b.Spec.Versioning, &bvc)
+			if err != nil {
+				return failure(err)
+			}
+			err = mtc.SetBucketVersioning(ctx, b.Status.CurrentSpec.Name, bvc)
+			if err != nil {
+				return failure(err)
+			}
+
+			l.Info("set status")
+			b.Status.CurrentSpec.Versioning = b.Spec.Versioning
+			err = r.Update(ctx, b)
+			if err != nil {
+				return failure(err)
+			}
+		}
+
+		l.Info("get bucket lifecycle configuration")
+		blc, err := mtc.GetBucketLifecycle(ctx, b.Status.CurrentSpec.Name)
+		err = ignoreMinioErrorCode(err, "NoSuchLifecycleConfiguration")
+		if err != nil {
+			return failure(err)
+		}
+		if blc == nil {
+			blc = lifecycle.NewConfiguration()
+		}
+		mblc := &v1.MinioBucketLifecycleConfiguration{}
+		err = convertViaXML(blc, mblc)
+		if err != nil {
+			return failure(err)
+		}
+		if !cmp.Equal(nilToEmpty(mblc), nilToEmpty(b.Status.CurrentSpec.Lifecycle), cmpopts.EquateEmpty()) {
+			l.Info("bucket lifecycle configuration changed (status and remote differ)")
+
+			l.Info("set bucket lifecycle configuration")
+			blc = &lifecycle.Configuration{}
+			err = convertViaXML(b.Status.CurrentSpec.Lifecycle, blc)
+			if err != nil {
+				return failure(err)
+			}
+			err = mtc.SetBucketLifecycle(ctx, b.Status.CurrentSpec.Name, blc)
+			if err != nil {
+				return failure(err)
+			}
+		}
+		if !reflect.DeepEqual(b.Spec.Lifecycle, b.Status.CurrentSpec.Lifecycle) {
+			l.Info("bucket lifecycle configuration changed (status and spec differ)")
+
+			l.Info("set bucket lifecycle configuration")
+			blc = &lifecycle.Configuration{}
+			err = convertViaXML(b.Spec.Lifecycle, blc)
+			if err != nil {
+				return failure(err)
+			}
+			err = mtc.SetBucketLifecycle(ctx, b.Status.CurrentSpec.Name, blc)
+			if err != nil {
+				return failure(err)
+			}
+
+			l.Info("set status")
+			b.Status.CurrentSpec.Lifecycle = b.Spec.Lifecycle
+			err = r.Update(ctx, b)
+			if err != nil {
+				return failure(err)
+			}
+		}
+
 		if b.Status.CurrentSpec.DeletionPolicy != b.Spec.DeletionPolicy {
 			l.Info("update bucket (deletion policy changed)")
 
@@ -550,9 +685,9 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 			if err != nil {
 				return failure(err)
 			}
-
-			return success()
 		}
+
+		return success()
 	}
 
 	if b.Status.CurrentSpec == nil {
@@ -576,6 +711,32 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 		}
 		if err != nil {
 			return failure(err)
+		}
+
+		l.Info("set bucket versioning")
+		if b.Spec.Versioning != nil {
+			bvc := minioclient.BucketVersioningConfiguration{}
+			err = convertViaXML(b.Spec.Versioning, &bvc)
+			if err != nil {
+				return failure(err)
+			}
+			err = mtc.SetBucketVersioning(ctx, b.Spec.Name, bvc)
+			if err != nil {
+				return failure(err)
+			}
+		}
+
+		l.Info("set bucket lifecycle")
+		if b.Spec.Lifecycle != nil {
+			blc := &lifecycle.Configuration{}
+			err = convertViaXML(b.Spec.Lifecycle, blc)
+			if err != nil {
+				return failure(err)
+			}
+			err = mtc.SetBucketLifecycle(ctx, b.Spec.Name, blc)
+			if err != nil {
+				return failure(err)
+			}
 		}
 
 		l.Info("set status")

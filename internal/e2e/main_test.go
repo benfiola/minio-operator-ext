@@ -36,6 +36,7 @@ import (
 	"github.com/minio/madmin-go/v3"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/minio/minio-go/v7/pkg/lifecycle"
 	miniov2 "github.com/minio/operator/pkg/apis/minio.min.io/v2"
 	"github.com/neilotoole/slogt"
 	"github.com/stretchr/testify/require"
@@ -379,7 +380,7 @@ func RunOperatorUntil(td TestData, rof func() error, ofs ...RunOperatorUntilOpt)
 	if o == nil {
 		// create operator if not defined
 		l := slogt.New(td.T, slogt.Text(), WithLogLevelHandler())
-		o, err = operator.New(&operator.Opts{KubeConfig: td.KubeConfig, Logger: l})
+		o, err = operator.New(&operator.Opts{KubeConfig: td.KubeConfig, Logger: l, MinioOperatorNamespace: "default"})
 		td.Require.NoError(err, "create operator")
 	}
 
@@ -481,7 +482,7 @@ func WaitForReconcilerError(td TestData, cb func(err error) error) {
 	prs := &rs
 
 	l := slogt.New(td.T, slogt.Text(), WithLogLevelHandler(), WithLogCollector(&rs))
-	o, err := operator.New(&operator.Opts{KubeConfig: td.KubeConfig, Logger: l})
+	o, err := operator.New(&operator.Opts{KubeConfig: td.KubeConfig, Logger: l, MinioOperatorNamespace: "default"})
 	td.Require.NoError(err, "create operator")
 
 	i := 0
@@ -680,7 +681,7 @@ func TestMinioBucket(t *testing.T) {
 			return StopIteration{}
 		})
 
-		err = td.Minio.RemoveObject(td.Ctx, b.Spec.Name, "testing-object", minio.RemoveObjectOptions{})
+		err = td.Minio.RemoveObject(td.Ctx, b.Spec.Name, "testing-object", minio.RemoveObjectOptions{ForceDelete: true})
 		td.Require.NoError(err, "remove data from minio bucket")
 
 		WaitForDelete(td, b)
@@ -705,6 +706,160 @@ func TestMinioBucket(t *testing.T) {
 		td.Require.NoError(err, "delete bucket object")
 
 		WaitForDelete(td, b)
+	})
+
+	t.Run("set bucket versioning config on create", func(t *testing.T) {
+		td := Setup(t)
+
+		b := createBucket(td)
+		b.Spec.Versioning = &v1.MinioBucketVersioningConfiguration{
+			Status: "Enabled",
+		}
+		err := td.Kube.Update(td.Ctx, b)
+		td.Require.NoError(err, "update bucket")
+
+		waitForReconcile(td, b)
+
+		vc, err := td.Minio.GetBucketVersioning(td.Ctx, b.Spec.Name)
+		td.Require.NoError(err, "get minio bucket")
+
+		td.Require.True(vc.Enabled())
+	})
+
+	t.Run("set bucket versioning config on update", func(t *testing.T) {
+		td := Setup(t)
+
+		b := createBucket(td)
+		waitForReconcile(td, b)
+
+		b.Spec.Versioning = &v1.MinioBucketVersioningConfiguration{
+			Status: "Enabled",
+		}
+		err := td.Kube.Update(td.Ctx, b)
+		td.Require.NoError(err, "update bucket")
+
+		waitForReconcile(td, b)
+
+		vc, err := td.Minio.GetBucketVersioning(td.Ctx, b.Spec.Name)
+		td.Require.NoError(err, "get minio bucket")
+
+		td.Require.True(vc.Enabled())
+	})
+
+	t.Run("corrects bucket versioning config drift", func(t *testing.T) {
+		td := Setup(t)
+
+		b := createBucket(td)
+		b.Spec.Versioning = &v1.MinioBucketVersioningConfiguration{
+			Status: "Enabled",
+		}
+		err := td.Kube.Update(td.Ctx, b)
+		td.Require.NoError(err, "update bucket")
+		waitForReconcile(td, b)
+
+		err = td.Minio.SetBucketVersioning(td.Ctx, b.Spec.Name, minio.BucketVersioningConfiguration{
+			Status: "Suspended",
+		})
+		td.Require.NoError(err, "update minio bucket")
+
+		RunOperatorUntil(td, func() error {
+			vc, err := td.Minio.GetBucketVersioning(td.Ctx, b.Spec.Name)
+			if err != nil {
+				return err
+			}
+			if !vc.Enabled() {
+				return nil
+			}
+			return StopIteration{}
+		})
+	})
+
+	t.Run("set bucket lifecycle config on create", func(t *testing.T) {
+		td := Setup(t)
+
+		b := createBucket(td)
+
+		b.Spec.Lifecycle = &v1.MinioBucketLifecycleConfiguration{
+			Rules: []v1.MinioBucketLifecycleRule{{
+				Expiration: v1.MinioBucketLifecycleExpiration{
+					Days: 1,
+				},
+				Status: "Enabled",
+			}},
+		}
+		err := td.Kube.Update(td.Ctx, b)
+		td.Require.NoError(err, "update bucket")
+
+		waitForReconcile(td, b)
+
+		lc, err := td.Minio.GetBucketLifecycle(td.Ctx, b.Spec.Name)
+		td.Require.NoError(err, "get minio bucket")
+
+		td.Require.True(lc.Rules[0].Expiration.Days == 1)
+	})
+
+	t.Run("set bucket lifecycle config on update", func(t *testing.T) {
+		td := Setup(t)
+
+		b := createBucket(td)
+		waitForReconcile(td, b)
+
+		b.Spec.Lifecycle = &v1.MinioBucketLifecycleConfiguration{
+			Rules: []v1.MinioBucketLifecycleRule{{
+				Expiration: v1.MinioBucketLifecycleExpiration{
+					Days: 1,
+				},
+				Status: "Enabled",
+			}},
+		}
+		err := td.Kube.Update(td.Ctx, b)
+		td.Require.NoError(err, "update bucket")
+		waitForReconcile(td, b)
+
+		lc, err := td.Minio.GetBucketLifecycle(td.Ctx, b.Spec.Name)
+		td.Require.NoError(err, "get minio bucket")
+
+		td.Require.True(lc.Rules[0].Expiration.Days == 1)
+	})
+
+	t.Run("corrects bucket lifecycle config drift", func(t *testing.T) {
+		td := Setup(t)
+
+		b := createBucket(td)
+
+		b.Spec.Lifecycle = &v1.MinioBucketLifecycleConfiguration{
+			Rules: []v1.MinioBucketLifecycleRule{{
+				Expiration: v1.MinioBucketLifecycleExpiration{
+					Days: 1,
+				},
+				Status: "Enabled",
+			}},
+		}
+		err := td.Kube.Update(td.Ctx, b)
+		td.Require.NoError(err, "update bucket")
+
+		waitForReconcile(td, b)
+
+		lc := lifecycle.NewConfiguration()
+		lc.Rules = []lifecycle.Rule{{
+			Expiration: lifecycle.Expiration{
+				Days: 1,
+			},
+			Status: "Disabled",
+		}}
+		err = td.Minio.SetBucketLifecycle(td.Ctx, b.Spec.Name, lc)
+		td.Require.NoError(err, "update minio bucket")
+
+		RunOperatorUntil(td, func() error {
+			lc, err := td.Minio.GetBucketLifecycle(td.Ctx, b.Spec.Name)
+			if err != nil {
+				return err
+			}
+			if lc.Rules[0].Status == "Disabled" {
+				return nil
+			}
+			return StopIteration{}
+		})
 	})
 }
 
