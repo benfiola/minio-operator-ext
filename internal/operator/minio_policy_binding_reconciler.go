@@ -1,4 +1,7 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 9f9811e (Add license headers)
 /*
 Copyright (C) 2025  Ben Fiola
 
@@ -15,8 +18,11 @@ GNU Affero General Public License for more details.
 You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+<<<<<<< HEAD
 =======
 >>>>>>> 38bcac6 (Split internal/operator/operator.go into multiple files)
+=======
+>>>>>>> 9f9811e (Add license headers)
 package operator
 
 import (
