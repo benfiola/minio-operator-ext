@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 /*
 Copyright (C) 2025  Ben Fiola
 
@@ -14,6 +15,8 @@ GNU Affero General Public License for more details.
 You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+=======
+>>>>>>> 38bcac6 (Split internal/operator/operator.go into multiple files)
 package operator
 
 import (
