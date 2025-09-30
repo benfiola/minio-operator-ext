@@ -59,6 +59,7 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&MinioPolicyBindingList{},
 		&MinioUser{},
 		&MinioUserList{},
+		&MinioServiceAccount{},
 	)
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
 	return nil
