@@ -27,7 +27,7 @@ import (
 // +kubebuilder:printcolumn:name="Tenant Name",type=string,description="Tenant Name",JSONPath=`.status.currentSpec.tenantRef.name`
 // +kubebuilder:printcolumn:name="Name",type=string,description="Name",JSONPath=`.status.currentSpec.name`
 
-// MinioServiceAccount defines a MinIO builtin group identity.
+// MinioServiceAccount defines a MinIO builtin service account identity.
 type MinioServiceAccount struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -51,8 +51,12 @@ type MinioServiceAccountSpec struct {
 	AccessKey  string `json:"accessKey,omitempty"`
 	SecretKey  string `json:"secretKey,omitempty"`
 
+	TargetSecretName string `json:"targetSecretName"`
+
 	// TODO: add expiration
 	// Expiration *time.Time `json:"expiration,omitempty"`
+
+	TenantRef ResourceRef `json:"tenantRef"`
 }
 
 // MinioServiceAccountStatus defines the current state of MinioServiceAccount

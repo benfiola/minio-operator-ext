@@ -172,6 +172,7 @@ func NewOperator(o *OperatorOpts) (*operator, error) {
 		&minioPolicyReconciler{minioOperatorNamespace: mon, syncInterval: si},
 		&minioPolicyBindingReconciler{minioOperatorNamespace: mon, syncInterval: si},
 		&minioUserReconciler{minioOperatorNamespace: mon, syncInterval: si},
+		&minioServiceAccountReconciler{minioOperatorNamespace: mon, syncInterval: si},
 	}
 	for _, r := range rs {
 		err = r.register(m)
