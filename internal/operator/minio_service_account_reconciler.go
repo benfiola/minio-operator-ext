@@ -76,15 +76,14 @@ func (r *minioServiceAccountReconciler) Reconcile(ctx context.Context, req recon
 			l.Info("delete service account (status set)")
 
 			l.Info("get tenant admin client")
-			tr := sa.Status.CurrentSpec.TenantRef.SetDefaultNamespace(sa.GetNamespace())
-			mtac, err := r.getAdminClient(ctx, tr)
+			mtac, err := r.getAdminClient(ctx, sa.Status.CurrentSpec.TenantRef.Name, sa.GetNamespace())
 			if err != nil {
 				return failure(err)
 			}
 
 			l.Info("delete minio service account")
-			err = mtac.DeleteServiceAccount(ctx, sa.Status.CurrentSpec.Name)
-			err = ignoreMadminErrorCode(err, "XMinioInvalidIAMCredentials") // TODO: check if this is correct
+			err = mtac.DeleteServiceAccount(ctx, sa.Status.CurrentSpec.AccessKey)
+			err = ignoreMadminErrorCode(err, "XMinioInvalidIAMCredentials")
 			if err != nil {
 				return failure(err)
 			}
@@ -133,8 +132,7 @@ func (r *minioServiceAccountReconciler) Reconcile(ctx context.Context, req recon
 		}
 
 		l.Info("get tenant admin client")
-		tr := sa.Status.CurrentSpec.TenantRef.SetDefaultNamespace(sa.GetNamespace())
-		mtac, err := r.getAdminClient(ctx, tr)
+		mtac, err := r.getAdminClient(ctx, sa.Status.CurrentSpec.TenantRef.Name, sa.GetNamespace())
 		if err != nil {
 			return failure(err)
 		}
@@ -165,21 +163,22 @@ func (r *minioServiceAccountReconciler) Reconcile(ctx context.Context, req recon
 		l.Info("create service account (status unset)")
 
 		l.Info("get tenant admin client")
-		tr := sa.Spec.TenantRef.SetDefaultNamespace(sa.GetNamespace())
-		mtac, err := r.getAdminClient(ctx, tr)
+		mtac, err := r.getAdminClient(ctx, sa.Spec.TenantRef.Name, sa.GetNamespace())
 		if err != nil {
 			return failure(err)
 		}
 
-		l.Info("get minio service account")
-		_, err = mtac.InfoServiceAccount(ctx, sa.Spec.AccessKey)
-		exists := err == nil
-		if exists && !sa.Spec.Migrate {
-			err = fmt.Errorf("service account %s already exists", sa.Spec.Name)
-		}
-		err = ignoreMadminErrorCode(err, "XMinioInvalidIAMCredentials")
-		if err != nil {
-			return failure(err)
+		if sa.Spec.AccessKey != "" {
+			l.Info("get minio service account")
+			_, err = mtac.InfoServiceAccount(ctx, sa.Spec.AccessKey)
+			exists := err == nil
+			if exists && !sa.Spec.Migrate {
+				err = fmt.Errorf("service account %s already exists", sa.Spec.AccessKey)
+			}
+			err = ignoreMadminErrorCode(err, "XMinioInvalidIAMCredentials")
+			if err != nil {
+				return failure(err)
+			}
 		}
 
 		l.Info("create minio service account")
@@ -217,8 +216,11 @@ func (r *minioServiceAccountReconciler) Reconcile(ctx context.Context, req recon
 	return success()
 }
 
-func (r *minioServiceAccountReconciler) getAdminClient(ctx context.Context, tr v1.ResourceRef) (*madmin.AdminClient, error) {
-	mtci, err := getMinioTenantClientInfo(ctx, r, tr, minioTenantClientInfoOpts{minioOperatorNamespace: r.minioOperatorNamespace})
+func (r *minioServiceAccountReconciler) getAdminClient(ctx context.Context, name, namespace string) (*madmin.AdminClient, error) {
+	mtci, err := getMinioTenantClientInfo(ctx, r, v1.ResourceRef{
+		Name:      name,
+		Namespace: namespace,
+	}, minioTenantClientInfoOpts{minioOperatorNamespace: r.minioOperatorNamespace})
 	if err != nil {
 		return nil, err
 	}
