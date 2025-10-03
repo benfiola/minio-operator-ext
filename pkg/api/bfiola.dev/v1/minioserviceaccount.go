@@ -41,23 +41,22 @@ type MinioServiceAccount struct {
 type MinioServiceAccountSpec struct {
 	Migrate bool `json:"migrate,omitempty"`
 
-	// TODO: add policy
-	// Policy     json.RawMessage `json:"policy,omitempty"` // Parsed value from iam/policy.Parse()
-
-	Name        string `json:"name,omitempty"`
-	Description string `json:"description,omitempty"`
+	Name        *string `json:"name,omitempty"`
+	Description *string `json:"description,omitempty"`
 
 	// +kubebuilder:validation:Required
 	TargetUser string `json:"targetUser,omitempty"`
 
-	AccessKey    string          `json:"accessKey,omitempty"`
+	AccessKey    *string         `json:"accessKey,omitempty"`
 	SecretKeyRef *ResourceKeyRef `json:"secretKeyRef,omitempty"`
 
 	// +kubebuilder:validation:Required
 	TargetSecretName string `json:"targetSecretName"`
 
+	// TODO: add policy
 	// TODO: add expiration
 	// Expiration *time.Time `json:"expiration,omitempty"`
+	// Policy     json.RawMessage `json:"policy,omitempty"`
 
 	TenantRef ResourceRef `json:"tenantRef"`
 }
