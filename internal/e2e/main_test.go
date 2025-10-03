@@ -1897,7 +1897,7 @@ func TestMinioServiceAccount(t *testing.T) {
 		td.Require.NotEmpty(secret.Data["secretKey"], "check if secret secret key is set")
 	})
 
-	t.Run("deletes a minio user", func(t *testing.T) {
+	t.Run("deletes a minio service account", func(t *testing.T) {
 		td := Setup(t)
 
 		sa := createServiceAccount(td)
@@ -1907,10 +1907,16 @@ func TestMinioServiceAccount(t *testing.T) {
 		td.Require.NoError(err, "delete service account object")
 		WaitForDelete(td, sa)
 
-		_, err = td.Madmin.InfoServiceAccount(td.Ctx, *sa.Spec.AccessKey)
+		_, err = td.Madmin.InfoServiceAccount(td.Ctx, *sa.Status.CurrentSpec.AccessKey)
 
 		merr := &madmin.ErrorResponse{}
 		td.Require.ErrorAs(err, merr, "check expected error type")
 		td.Require.Equal(merr.Code, "XMinioInvalidIAMCredentials", "check expected error code")
+
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: sa.Status.CurrentSpec.TargetSecretName},
+		}
+		err = td.Kube.Get(td.Ctx, types.NamespacedName{Name: sa.Status.CurrentSpec.TargetSecretName, Namespace: sa.GetNamespace()}, secret)
+		td.Require.Error(err, "check if secret is removed")
 	})
 }
