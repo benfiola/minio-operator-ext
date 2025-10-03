@@ -50,8 +50,8 @@ type MinioServiceAccountSpec struct {
 	// +kubebuilder:validation:Required
 	TargetUser string `json:"targetUser,omitempty"`
 
-	AccessKey string `json:"accessKey,omitempty"`
-	SecretKey string `json:"secretKey,omitempty"`
+	AccessKey    string          `json:"accessKey,omitempty"`
+	SecretKeyRef *ResourceKeyRef `json:"secretKeyRef,omitempty"`
 
 	// +kubebuilder:validation:Required
 	TargetSecretName string `json:"targetSecretName"`
