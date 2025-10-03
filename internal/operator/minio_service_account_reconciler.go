@@ -224,9 +224,7 @@ func (r *minioServiceAccountReconciler) createServiceAccount(ctx context.Context
 	l.Info("set status")
 	sa.Spec.Migrate = false
 	sa.Status.CurrentSpec = &sa.Spec
-	if sa.Spec.AccessKey != nil {
-		sa.Status.CurrentSpec.AccessKey = &creds.AccessKey
-	}
+	sa.Status.CurrentSpec.AccessKey = &creds.AccessKey
 	err = r.Update(ctx, sa)
 	if err != nil {
 		return nil, err
