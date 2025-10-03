@@ -24,6 +24,8 @@ import (
 	v1 "github.com/benfiola/minio-operator-ext/pkg/api/bfiola.dev/v1"
 	"github.com/go-logr/logr"
 	"github.com/minio/madmin-go/v3"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -160,6 +162,10 @@ func (r *minioServiceAccountReconciler) createServiceAccount(ctx context.Context
 	}
 
 	if sa.Spec.AccessKey != "" {
+		if sa.Spec.Migrate {
+			return nil, fmt.Errorf("cannot migrate service account without access key. Resource: name=%s namespace=%s", sa.GetName(), sa.GetNamespace())
+		}
+
 		l.Info("get minio service account")
 		_, err = mtac.InfoServiceAccount(ctx, sa.Spec.AccessKey)
 		exists := err == nil
@@ -172,18 +178,29 @@ func (r *minioServiceAccountReconciler) createServiceAccount(ctx context.Context
 		}
 	}
 
-	l.Info("create minio service account")
-	creds, err := mtac.AddServiceAccount(ctx, madmin.AddServiceAccountReq{
+	req := madmin.AddServiceAccountReq{
 		TargetUser:  sa.Spec.TargetUser,
 		AccessKey:   sa.Spec.AccessKey,
-		SecretKey:   sa.Spec.SecretKey,
 		Name:        sa.Spec.Name,
 		Description: sa.Spec.Description,
 
 		// TODO: implement
 		// Policy:      nil,
 		// Expiration:  sa.Spec.Expiration,
-	})
+	}
+
+	// SecretKeyRef is specified, use the secret key
+	if sa.Spec.SecretKeyRef != nil {
+		secret := &corev1.Secret{}
+		err := r.Get(ctx, types.NamespacedName{Name: sa.Spec.SecretKeyRef.Name, Namespace: sa.Spec.SecretKeyRef.Namespace}, secret)
+		if err != nil {
+			return nil, err
+		}
+		req.SecretKey = string(secret.Data[sa.Spec.SecretKeyRef.Key])
+	}
+
+	l.Info("create minio service account")
+	creds, err := mtac.AddServiceAccount(ctx, req)
 	if err != nil {
 		return nil, err
 	}
