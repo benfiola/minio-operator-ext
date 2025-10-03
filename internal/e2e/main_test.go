@@ -112,6 +112,10 @@ var (
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "policy-to-ldap-user-short"},
 		Spec:       v1.MinioPolicyBindingSpec{User: v1.MinioPolicyBindingIdentity{Ldap: "ldap-user1"}, Policy: policy.Spec.Name, TenantRef: v1.ResourceRef{Name: "tenant"}},
 	})
+	builtinServiceAccount = CreateTestObject(&v1.MinioServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "builtin-minio-service-account"},
+		Spec:       v1.MinioServiceAccountSpec{Name: "builtin-minio-service-account", TargetUser: builtinUser.Spec.AccessKey, TenantRef: v1.ResourceRef{Name: "tenant"}},
+	})
 )
 
 // TestData holds data used during tests
@@ -1839,5 +1843,65 @@ func TestMinioUser(t *testing.T) {
 		waitForReconcile(td, u)
 
 		WaitForStableResourceVersion(td, u)
+	})
+}
+
+func TestMinioServiceAccount(t *testing.T) {
+	createServiceAccount := func(td TestData) *v1.MinioServiceAccount {
+		td.T.Helper()
+
+		us := builtinUserSecret.DeepCopy()
+		err := td.Kube.Create(td.Ctx, us)
+		td.Require.NoError(err, "create user secret object")
+		u := builtinUser.DeepCopy()
+		err = td.Kube.Create(td.Ctx, u)
+		td.Require.NoError(err, "create user object")
+
+		sa := builtinServiceAccount.DeepCopy()
+		err = td.Kube.Create(td.Ctx, sa)
+		td.Require.NoError(err, "create service account")
+
+		return sa
+	}
+
+	waitForReconcile := func(td TestData, sa *v1.MinioServiceAccount) {
+		RunOperatorUntil(td, func() error {
+			err := td.Kube.Get(td.Ctx, client.ObjectKeyFromObject(sa), sa)
+			td.Require.NoError(err, "waiting for service account reconcile")
+			if sa.Status.CurrentSpec == nil {
+				return nil
+			}
+			if !reflect.DeepEqual(sa.Spec, *sa.Status.CurrentSpec) {
+				return nil
+			}
+			return StopIteration{}
+		})
+	}
+
+	t.Run("creates a minio service account", func(t *testing.T) {
+		td := Setup(t)
+
+		sa := createServiceAccount(td)
+		waitForReconcile(td, sa)
+
+		_, err := td.Madmin.InfoServiceAccount(td.Ctx, sa.Status.CurrentSpec.AccessKey)
+		td.Require.NoError(err, "check if service account exists")
+	})
+
+	t.Run("deletes a minio user", func(t *testing.T) {
+		td := Setup(t)
+
+		sa := createServiceAccount(td)
+		waitForReconcile(td, sa)
+
+		err := td.Kube.Delete(td.Ctx, sa)
+		td.Require.NoError(err, "delete service account object")
+		WaitForDelete(td, sa)
+
+		_, err = td.Madmin.InfoServiceAccount(td.Ctx, sa.Spec.AccessKey)
+
+		merr := &madmin.ErrorResponse{}
+		td.Require.ErrorAs(err, merr, "check expected error type")
+		td.Require.Equal(merr.Code, "XMinioInvalidIAMCredentials", "check expected error code")
 	})
 }
