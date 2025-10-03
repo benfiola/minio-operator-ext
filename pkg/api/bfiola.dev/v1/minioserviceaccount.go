@@ -47,10 +47,13 @@ type MinioServiceAccountSpec struct {
 	Name        string `json:"name,omitempty"`
 	Description string `json:"description,omitempty"`
 
+	// +kubebuilder:validation:Required
 	TargetUser string `json:"targetUser,omitempty"`
-	AccessKey  string `json:"accessKey,omitempty"`
-	SecretKey  string `json:"secretKey,omitempty"`
 
+	AccessKey string `json:"accessKey,omitempty"`
+	SecretKey string `json:"secretKey,omitempty"`
+
+	// +kubebuilder:validation:Required
 	TargetSecretName string `json:"targetSecretName"`
 
 	// TODO: add expiration
