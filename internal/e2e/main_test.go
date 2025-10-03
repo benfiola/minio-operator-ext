@@ -115,7 +115,7 @@ var (
 	})
 	builtinServiceAccount = CreateTestObject(&v1.MinioServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "builtin-minio-service-account"},
-		Spec:       v1.MinioServiceAccountSpec{Name: "builtin-minio-service-account", TargetUser: builtinUser.Spec.AccessKey, TargetSecretName: "builtin-minio-service-account-credentials-secret", TenantRef: v1.ResourceRef{Name: "tenant"}},
+		Spec:       v1.MinioServiceAccountSpec{Name: &[]string{"builtin-minio-service-account"}[0], TargetUser: builtinUser.Spec.AccessKey, TargetSecretName: "builtin-minio-service-account-credentials-secret", TenantRef: v1.ResourceRef{Name: "tenant"}},
 	})
 )
 
@@ -1885,7 +1885,7 @@ func TestMinioServiceAccount(t *testing.T) {
 		sa := createServiceAccount(td)
 		waitForReconcile(td, sa)
 
-		_, err := td.Madmin.InfoServiceAccount(td.Ctx, sa.Status.CurrentSpec.AccessKey)
+		_, err := td.Madmin.InfoServiceAccount(td.Ctx, *sa.Status.CurrentSpec.AccessKey)
 		td.Require.NoError(err, "check if service account exists")
 
 		secret := &corev1.Secret{
@@ -1893,7 +1893,7 @@ func TestMinioServiceAccount(t *testing.T) {
 		}
 		err = td.Kube.Get(td.Ctx, types.NamespacedName{Name: sa.Status.CurrentSpec.TargetSecretName, Namespace: sa.GetNamespace()}, secret)
 		td.Require.NoError(err, "check if secret exists")
-		td.Require.Equal(secret.Data["accessKey"], []byte(sa.Status.CurrentSpec.AccessKey), "check if secret access key matches")
+		td.Require.Equal(secret.Data["accessKey"], []byte(*sa.Status.CurrentSpec.AccessKey), "check if secret access key matches")
 		td.Require.NotEmpty(secret.Data["secretKey"], "check if secret secret key is set")
 	})
 
@@ -1907,7 +1907,7 @@ func TestMinioServiceAccount(t *testing.T) {
 		td.Require.NoError(err, "delete service account object")
 		WaitForDelete(td, sa)
 
-		_, err = td.Madmin.InfoServiceAccount(td.Ctx, sa.Spec.AccessKey)
+		_, err = td.Madmin.InfoServiceAccount(td.Ctx, *sa.Spec.AccessKey)
 
 		merr := &madmin.ErrorResponse{}
 		td.Require.ErrorAs(err, merr, "check expected error type")
