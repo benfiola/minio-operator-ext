@@ -274,7 +274,7 @@ func (r *minioServiceAccountReconciler) getAdminClient(ctx context.Context, name
 	return mtac, nil
 }
 
-// TODO: permissions to create secrets
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=create
 
 func (r *minioServiceAccountReconciler) createCredentialsSecret(ctx context.Context, l logr.Logger, sa *v1.MinioServiceAccount, creds *madmin.Credentials) error {
 	l.Info("create or update credentials secret")
