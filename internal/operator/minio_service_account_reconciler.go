@@ -66,9 +66,6 @@ func (r *minioServiceAccountReconciler) Reconcile(ctx context.Context, req recon
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 
-	success := func() (reconcile.Result, error) { return reconcile.Result{RequeueAfter: r.syncInterval}, nil }
-	failure := func(err error) (reconcile.Result, error) { return reconcile.Result{}, err }
-
 	if !sa.ObjectMeta.DeletionTimestamp.IsZero() {
 		l.Info("marked for deletion")
 
@@ -78,34 +75,34 @@ func (r *minioServiceAccountReconciler) Reconcile(ctx context.Context, req recon
 			l.Info("get tenant admin client")
 			mtac, err := r.getAdminClient(ctx, sa.Status.CurrentSpec.TenantRef.Name, sa.GetNamespace())
 			if err != nil {
-				return failure(err)
+				return failedReconcilliation(err)
 			}
 
 			l.Info("delete minio service account")
 			err = mtac.DeleteServiceAccount(ctx, sa.Status.CurrentSpec.AccessKey)
 			err = ignoreMadminErrorCode(err, "XMinioInvalidIAMCredentials")
 			if err != nil {
-				return failure(err)
+				return failedReconcilliation(err)
 			}
 
 			l.Info("clear status")
 			sa.Status.CurrentSpec = nil
 			err = r.Update(ctx, sa)
 			if err != nil {
-				return failure(err)
+				return failedReconcilliation(err)
 			}
 
-			return success()
+			return successfulReconcilliation(r.syncInterval)
 		}
 
 		l.Info("clear finalizer")
 		controllerutil.RemoveFinalizer(sa, finalizer)
 		err = r.Update(ctx, sa)
 		if err != nil {
-			return failure(err)
+			return failedReconcilliation(err)
 		}
 
-		return success()
+		return successfulReconcilliation(r.syncInterval)
 	}
 
 	if !controllerutil.ContainsFinalizer(sa, finalizer) {
@@ -113,10 +110,10 @@ func (r *minioServiceAccountReconciler) Reconcile(ctx context.Context, req recon
 		controllerutil.AddFinalizer(sa, finalizer)
 		err = r.Update(ctx, sa)
 		if err != nil {
-			return failure(err)
+			return failedReconcilliation(err)
 		}
 
-		return success()
+		return successfulReconcilliation(r.syncInterval)
 	}
 
 	if sa.Status.CurrentSpec != nil {
@@ -127,14 +124,14 @@ func (r *minioServiceAccountReconciler) Reconcile(ctx context.Context, req recon
 			sa.Spec.Migrate = false
 			err = r.Update(ctx, sa)
 			if err != nil {
-				return failure(err)
+				return failedReconcilliation(err)
 			}
 		}
 
 		l.Info("get tenant admin client")
 		mtac, err := r.getAdminClient(ctx, sa.Status.CurrentSpec.TenantRef.Name, sa.GetNamespace())
 		if err != nil {
-			return failure(err)
+			return failedReconcilliation(err)
 		}
 
 		l.Info("get minio service account")
@@ -142,17 +139,17 @@ func (r *minioServiceAccountReconciler) Reconcile(ctx context.Context, req recon
 		e := !isMadminErrorCode(err, "XMinioInvalidIAMCredentials")
 		err = ignoreMadminErrorCode(err, "XMinioInvalidIAMCredentials")
 		if err != nil {
-			return failure(err)
+			return failedReconcilliation(err)
 		}
 		if !e {
 			l.Info("clear status (minio service account no longer exists)")
 			sa.Status.CurrentSpec = nil
 			err = r.Update(ctx, sa)
 			if err != nil {
-				return failure(err)
+				return failedReconcilliation(err)
 			}
 
-			return success()
+			return successfulReconcilliation(r.syncInterval)
 		}
 
 		// TODO: update service account, see
@@ -165,7 +162,7 @@ func (r *minioServiceAccountReconciler) Reconcile(ctx context.Context, req recon
 		l.Info("get tenant admin client")
 		mtac, err := r.getAdminClient(ctx, sa.Spec.TenantRef.Name, sa.GetNamespace())
 		if err != nil {
-			return failure(err)
+			return failedReconcilliation(err)
 		}
 
 		if sa.Spec.AccessKey != "" {
@@ -177,7 +174,7 @@ func (r *minioServiceAccountReconciler) Reconcile(ctx context.Context, req recon
 			}
 			err = ignoreMadminErrorCode(err, "XMinioInvalidIAMCredentials")
 			if err != nil {
-				return failure(err)
+				return failedReconcilliation(err)
 			}
 		}
 
@@ -194,7 +191,7 @@ func (r *minioServiceAccountReconciler) Reconcile(ctx context.Context, req recon
 			// Expiration:  sa.Spec.Expiration,
 		})
 		if err != nil {
-			return failure(err)
+			return failedReconcilliation(err)
 		}
 
 		l.Info("set status")
@@ -203,17 +200,17 @@ func (r *minioServiceAccountReconciler) Reconcile(ctx context.Context, req recon
 		sa.Status.CurrentSpec.AccessKey = creds.AccessKey
 		err = r.Update(ctx, sa)
 		if err != nil {
-			return failure(err)
+			return failedReconcilliation(err)
 		}
 
-		return success()
+		return successfulReconcilliation(r.syncInterval)
 	}
 
 	// TODO:
 	// Create secret with credentials
 	// sa.Spec.TargetSecretName
 
-	return success()
+	return successfulReconcilliation(r.syncInterval)
 }
 
 func (r *minioServiceAccountReconciler) getAdminClient(ctx context.Context, name, namespace string) (*madmin.AdminClient, error) {
@@ -229,4 +226,12 @@ func (r *minioServiceAccountReconciler) getAdminClient(ctx context.Context, name
 		return nil, err
 	}
 	return mtac, nil
+}
+
+func successfulReconcilliation(duration time.Duration) (reconcile.Result, error) {
+	return reconcile.Result{RequeueAfter: duration}, nil
+}
+
+func failedReconcilliation(err error) (reconcile.Result, error) {
+	return reconcile.Result{}, err
 }
