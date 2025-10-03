@@ -25,6 +25,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/minio/madmin-go/v3"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -151,6 +152,10 @@ func (r *minioServiceAccountReconciler) updateServiceAccount(ctx context.Context
 
 		return err
 	}
+
+	// TODO: update service account
+	// mtac.UpdateServiceAccount(ctx, sa.Status.CurrentSpec.AccessKey, madmin.UpdateServiceAccountReq{})
+
 	return nil
 }
 
@@ -269,11 +274,29 @@ func (r *minioServiceAccountReconciler) getAdminClient(ctx context.Context, name
 	return mtac, nil
 }
 
+// TODO: permissions to create secrets
+
 func (r *minioServiceAccountReconciler) createCredentialsSecret(ctx context.Context, l logr.Logger, sa *v1.MinioServiceAccount, creds *madmin.Credentials) error {
-	// TODO:
-	// Create secret with credentials
-	// sa.Spec.TargetSecretName
-	return nil
+	l.Info("create or update credentials secret")
+
+	desired := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: sa.GetNamespace(),
+			Name:      sa.Spec.TargetSecretName,
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{
+			"accessKey": []byte(creds.AccessKey),
+			"secretKey": []byte(creds.SecretKey),
+		},
+	}
+
+	err := controllerutil.SetOwnerReference(sa, desired, r.Scheme())
+	if err != nil {
+		return err
+	}
+
+	return r.Create(ctx, desired)
 }
 
 func successfulReconcilliation(duration time.Duration) (reconcile.Result, error) {
