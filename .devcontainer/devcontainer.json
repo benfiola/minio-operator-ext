@@ -3,6 +3,7 @@
     "vscode": {
       "extensions": [
         "esbenp.prettier-vscode",
+        "ethan-reesor.exp-vscode-go",
         "golang.go",
         "rohit-gohri.format-code-action",
         "ms-vscode.makefile-tools"
@@ -13,6 +14,8 @@
           "source.formatDocument"
         ],
         "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "exp-vscode-go.testExplorer.enable": true,
+        "go.testExplorer.enable": false,
         "go.testFlags": ["-v", "-count=1"],
         "go.testTimeout": "300s",
         "launch": {
