@@ -235,7 +235,9 @@ func convertViaXML[T any](src any, dst *T) error {
 // This is used to facilitate equality checks where nil and the type's zero value are treated as equivalent.
 func nilToEmpty[T any](v *T) T {
 	if v == nil {
-		return reflect.Zero(reflect.TypeOf(v)).Interface().(T)
+		rv := reflect.ValueOf(v)
+		zv := reflect.Zero(rv.Type().Elem()).Interface().(T)
+		return zv
 	}
 	return *v
 }
