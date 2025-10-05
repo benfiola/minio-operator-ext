@@ -27,18 +27,21 @@ import (
 // +kubebuilder:printcolumn:name="Tenant Name",type=string,description="Tenant Name",JSONPath=`.status.currentSpec.tenantRef.name`
 // +kubebuilder:printcolumn:name="Name",type=string,description="Name",JSONPath=`.status.currentSpec.name`
 
-// MinioServiceAccount defines a MinIO builtin service account identity.
-type MinioServiceAccount struct {
+// MinioAccessKey defines a MinIO builtin service account identity.
+// NOTE: in the minio API this is called a service account,
+// but the documentation refers to it as an access key
+// https://docs.min.io/community/minio-object-store/administration/identity-access-management/minio-user-management.html#access-keys
+type MinioAccessKey struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec MinioServiceAccountSpec `json:"spec"`
+	Spec MinioAccessKeySpec `json:"spec"`
 	// +kubebuilder:pruning:PreserveUnknownFields
-	Status MinioServiceAccountStatus `json:"status,omitempty"`
+	Status MinioAccessKeyStatus `json:"status,omitempty"`
 }
 
-// MinioServiceAccountSpec defines the desired state of MinioServiceAccount
-type MinioServiceAccountSpec struct {
+// MinioAccessKeySpec defines the desired state of MinioAccessKey
+type MinioAccessKeySpec struct {
 	Migrate bool `json:"migrate,omitempty"`
 
 	Name        *string `json:"name,omitempty"`
@@ -61,19 +64,19 @@ type MinioServiceAccountSpec struct {
 	TenantRef ResourceRef `json:"tenantRef"`
 }
 
-// MinioServiceAccountStatus defines the current state of MinioServiceAccount
-type MinioServiceAccountStatus struct {
-	Synced      *bool                    `json:"synced,omitempty"`
-	CurrentSpec *MinioServiceAccountSpec `json:"currentSpec,omitempty"`
+// MinioAccessKeyStatus defines the current state of MinioAccessKey
+type MinioAccessKeyStatus struct {
+	Synced      *bool               `json:"synced,omitempty"`
+	CurrentSpec *MinioAccessKeySpec `json:"currentSpec,omitempty"`
 }
 
 // +k8s:deepcopy-gen=true
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// MinioServiceAccountList contains a list of MinioServiceAccount
-type MinioServiceAccountList struct {
+// MinioAccessKeyList contains a list of MinioAccessKey
+type MinioAccessKeyList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 
-	Items []MinioServiceAccount `json:"items"`
+	Items []MinioAccessKey `json:"items"`
 }
