@@ -34,20 +34,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-// minioServiceAccountReconciler reconciles [v1.MinioServiceAccount] resources
-type minioServiceAccountReconciler struct {
+// minioAccessKeyReconciler reconciles [v1.MinioAccessKey] resources
+type minioAccessKeyReconciler struct {
 	client.Client
 	logger                 logr.Logger
 	minioOperatorNamespace string
 	syncInterval           time.Duration
 }
 
-// Builds a controller with a [minioServiceAccountReconciler].
+// Builds a controller with a [minioAccessKeyReconciler].
 // Registers this controller with a [manager.Manager] instance.
 // Returns an error if a controller cannot be built.
-func (r *minioServiceAccountReconciler) register(m manager.Manager) error {
+func (r *minioAccessKeyReconciler) register(m manager.Manager) error {
 	r.Client = m.GetClient()
-	ctrl, err := builder.ControllerManagedBy(m).For(&v1.MinioServiceAccount{}).Build(r)
+	ctrl, err := builder.ControllerManagedBy(m).For(&v1.MinioAccessKey{}).Build(r)
 	if err != nil {
 		return err
 	}
@@ -55,23 +55,23 @@ func (r *minioServiceAccountReconciler) register(m manager.Manager) error {
 	return nil
 }
 
-// +kubebuilder:rbac:groups=bfiola.dev,resources=minioserviceaccounts,verbs=get;list;update;watch
+// +kubebuilder:rbac:groups=bfiola.dev,resources=minioaccesskeys,verbs=get;list;update;watch
 
-// Reconciles a [reconcile.Request] associated with a [v1.MinioServiceAccount].
+// Reconciles a [reconcile.Request] associated with a [v1.MinioAccessKey].
 // Returns a error if reconciliation fails.
-func (r *minioServiceAccountReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
+func (r *minioAccessKeyReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	l := r.logger.WithValues("resource", req.NamespacedName.String())
 	l.Info("reconcile")
 
-	sa := &v1.MinioServiceAccount{}
-	err := r.Get(ctx, req.NamespacedName, sa)
+	ak := &v1.MinioAccessKey{}
+	err := r.Get(ctx, req.NamespacedName, ak)
 	if err != nil {
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if !sa.ObjectMeta.DeletionTimestamp.IsZero() {
+	if !ak.ObjectMeta.DeletionTimestamp.IsZero() {
 		l.Info("marked for deletion")
-		err = r.deleteServiceAccount(ctx, l, sa)
+		err = r.deleteAccessKey(ctx, l, ak)
 		if err != nil {
 			return failedReconcilliation(err)
 		}
@@ -79,10 +79,10 @@ func (r *minioServiceAccountReconciler) Reconcile(ctx context.Context, req recon
 		return successfulReconcilliation(r.syncInterval)
 	}
 
-	if !controllerutil.ContainsFinalizer(sa, finalizer) {
+	if !controllerutil.ContainsFinalizer(ak, finalizer) {
 		l.Info("add finalizer")
-		controllerutil.AddFinalizer(sa, finalizer)
-		err = r.Update(ctx, sa)
+		controllerutil.AddFinalizer(ak, finalizer)
+		err = r.Update(ctx, ak)
 		if err != nil {
 			return failedReconcilliation(err)
 		}
@@ -90,25 +90,25 @@ func (r *minioServiceAccountReconciler) Reconcile(ctx context.Context, req recon
 		return successfulReconcilliation(r.syncInterval)
 	}
 
-	if sa.Status.CurrentSpec != nil {
-		l.Info("check for service account change")
+	if ak.Status.CurrentSpec != nil {
+		l.Info("check for access key change")
 
-		err := r.updateServiceAccount(ctx, sa, l)
+		err := r.updateAccessKey(ctx, ak, l)
 		if err != nil {
 			return failedReconcilliation(err)
 		}
 		return successfulReconcilliation(r.syncInterval)
 	}
 
-	if sa.Status.CurrentSpec == nil {
-		l.Info("create service account (status unset)")
+	if ak.Status.CurrentSpec == nil {
+		l.Info("create access key (status unset)")
 
-		creds, err := r.createServiceAccount(ctx, l, sa)
+		creds, err := r.createAccessKey(ctx, l, ak)
 		if err != nil {
 			return failedReconcilliation(err)
 		}
 
-		err = r.createCredentialsSecret(ctx, l, sa, creds)
+		err = r.createCredentialsSecret(ctx, l, ak, creds)
 		if err != nil {
 			return failedReconcilliation(err)
 		}
@@ -119,7 +119,7 @@ func (r *minioServiceAccountReconciler) Reconcile(ctx context.Context, req recon
 	return successfulReconcilliation(r.syncInterval)
 }
 
-func (r *minioServiceAccountReconciler) updateServiceAccount(ctx context.Context, sa *v1.MinioServiceAccount, l logr.Logger) error {
+func (r *minioAccessKeyReconciler) updateAccessKey(ctx context.Context, sa *v1.MinioAccessKey, l logr.Logger) error {
 	if sa.Spec.Migrate {
 		l.Info("remove migrate spec field")
 		sa.Spec.Migrate = false
@@ -139,7 +139,7 @@ func (r *minioServiceAccountReconciler) updateServiceAccount(ctx context.Context
 		return err
 	}
 
-	l.Info("get minio service account")
+	l.Info("get minio access key")
 	_, err = mtac.InfoServiceAccount(ctx, *sa.Status.CurrentSpec.AccessKey)
 	e := !isMadminErrorCode(err, "XMinioInvalidIAMCredentials")
 	err = ignoreMadminErrorCode(err, "XMinioInvalidIAMCredentials")
@@ -147,7 +147,7 @@ func (r *minioServiceAccountReconciler) updateServiceAccount(ctx context.Context
 		return err
 	}
 	if !e {
-		l.Info("clear status (minio service account no longer exists)")
+		l.Info("clear status (minio access key no longer exists)")
 		sa.Status.CurrentSpec = nil
 		err = r.Update(ctx, sa)
 		if err != nil {
@@ -157,13 +157,13 @@ func (r *minioServiceAccountReconciler) updateServiceAccount(ctx context.Context
 		return err
 	}
 
-	// TODO: update service account
+	// TODO: update access key
 	// mtac.UpdateServiceAccount(ctx, sa.Status.CurrentSpec.AccessKey, madmin.UpdateServiceAccountReq{})
 
 	return nil
 }
 
-func (r *minioServiceAccountReconciler) createServiceAccount(ctx context.Context, l logr.Logger, sa *v1.MinioServiceAccount) (*madmin.Credentials, error) {
+func (r *minioAccessKeyReconciler) createAccessKey(ctx context.Context, l logr.Logger, sa *v1.MinioAccessKey) (*madmin.Credentials, error) {
 	l.Info("get tenant admin client")
 	mtac, err := r.getAdminClient(ctx, sa.Spec.TenantRef.Name, sa.GetNamespace())
 	if err != nil {
@@ -172,14 +172,14 @@ func (r *minioServiceAccountReconciler) createServiceAccount(ctx context.Context
 
 	if sa.Spec.AccessKey != nil {
 		if sa.Spec.Migrate {
-			return nil, fmt.Errorf("cannot migrate service account without access key. Resource: name=%s namespace=%s", sa.GetName(), sa.GetNamespace())
+			return nil, fmt.Errorf("cannot migrate access key without access key. Resource: name=%s namespace=%s", sa.GetName(), sa.GetNamespace())
 		}
 
-		l.Info("get minio service account")
+		l.Info("get minio access key")
 		_, err = mtac.InfoServiceAccount(ctx, *sa.Spec.AccessKey)
 		exists := err == nil
 		if exists && !sa.Spec.Migrate {
-			err = fmt.Errorf("service account %s already exists", *sa.Spec.AccessKey)
+			err = fmt.Errorf("access key %s already exists", *sa.Spec.AccessKey)
 		}
 		err = ignoreMadminErrorCode(err, "XMinioInvalidIAMCredentials")
 		if err != nil {
@@ -215,7 +215,7 @@ func (r *minioServiceAccountReconciler) createServiceAccount(ctx context.Context
 		req.SecretKey = string(secret.Data[sa.Spec.SecretKeyRef.Key])
 	}
 
-	l.Info("create minio service account")
+	l.Info("create minio access key")
 	creds, err := mtac.AddServiceAccount(ctx, req)
 	if err != nil {
 		return nil, err
@@ -233,9 +233,9 @@ func (r *minioServiceAccountReconciler) createServiceAccount(ctx context.Context
 	return &creds, nil
 }
 
-func (r *minioServiceAccountReconciler) deleteServiceAccount(ctx context.Context, l logr.Logger, sa *v1.MinioServiceAccount) error {
+func (r *minioAccessKeyReconciler) deleteAccessKey(ctx context.Context, l logr.Logger, sa *v1.MinioAccessKey) error {
 	if sa.Status.CurrentSpec != nil {
-		l.Info("delete service account (status set)")
+		l.Info("delete access key (status set)")
 
 		if sa.Status.CurrentSpec.AccessKey == nil {
 			return fmt.Errorf("access key is required. Resource: name=%s namespace=%s", sa.GetName(), sa.GetNamespace())
@@ -247,7 +247,7 @@ func (r *minioServiceAccountReconciler) deleteServiceAccount(ctx context.Context
 			return err
 		}
 
-		l.Info("delete minio service account")
+		l.Info("delete minio access key")
 		err = mtac.DeleteServiceAccount(ctx, *sa.Status.CurrentSpec.AccessKey)
 		err = ignoreMadminErrorCode(err, "XMinioInvalidIAMCredentials")
 		if err != nil {
@@ -274,7 +274,7 @@ func (r *minioServiceAccountReconciler) deleteServiceAccount(ctx context.Context
 	return nil
 }
 
-func (r *minioServiceAccountReconciler) getAdminClient(ctx context.Context, name, namespace string) (*madmin.AdminClient, error) {
+func (r *minioAccessKeyReconciler) getAdminClient(ctx context.Context, name, namespace string) (*madmin.AdminClient, error) {
 	mtci, err := getMinioTenantClientInfo(ctx, r, v1.ResourceRef{
 		Name:      name,
 		Namespace: namespace,
@@ -291,7 +291,7 @@ func (r *minioServiceAccountReconciler) getAdminClient(ctx context.Context, name
 
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=create
 
-func (r *minioServiceAccountReconciler) createCredentialsSecret(ctx context.Context, l logr.Logger, sa *v1.MinioServiceAccount, creds *madmin.Credentials) error {
+func (r *minioAccessKeyReconciler) createCredentialsSecret(ctx context.Context, l logr.Logger, sa *v1.MinioAccessKey, creds *madmin.Credentials) error {
 	l.Info("create or update credentials secret")
 
 	desired := &corev1.Secret{

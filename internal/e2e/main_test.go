@@ -113,9 +113,9 @@ var (
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "policy-to-ldap-user-short"},
 		Spec:       v1.MinioPolicyBindingSpec{User: v1.MinioPolicyBindingIdentity{Ldap: "ldap-user1"}, Policy: policy.Spec.Name, TenantRef: v1.ResourceRef{Name: "tenant"}},
 	})
-	builtinServiceAccount = CreateTestObject(&v1.MinioServiceAccount{
+	builtinAccessKey = CreateTestObject(&v1.MinioAccessKey{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "builtin-minio-service-account"},
-		Spec:       v1.MinioServiceAccountSpec{Name: &[]string{"builtin-minio-service-account"}[0], TargetUser: builtinUser.Spec.AccessKey, TargetSecretName: "builtin-minio-service-account-credentials-secret", TenantRef: v1.ResourceRef{Name: "tenant"}},
+		Spec:       v1.MinioAccessKeySpec{Name: &[]string{"builtin-minio-service-account"}[0], TargetUser: builtinUser.Spec.AccessKey, TargetSecretName: "builtin-minio-service-account-credentials-secret", TenantRef: v1.ResourceRef{Name: "tenant"}},
 	})
 )
 
@@ -1847,8 +1847,8 @@ func TestMinioUser(t *testing.T) {
 	})
 }
 
-func TestMinioServiceAccount(t *testing.T) {
-	createServiceAccount := func(td TestData) *v1.MinioServiceAccount {
+func TestMinioAccessKey(t *testing.T) {
+	createAccessKey := func(td TestData) *v1.MinioAccessKey {
 		td.T.Helper()
 
 		us := builtinUserSecret.DeepCopy()
@@ -1858,65 +1858,65 @@ func TestMinioServiceAccount(t *testing.T) {
 		err = td.Kube.Create(td.Ctx, u)
 		td.Require.NoError(err, "create user object")
 
-		sa := builtinServiceAccount.DeepCopy()
-		err = td.Kube.Create(td.Ctx, sa)
-		td.Require.NoError(err, "create service account")
+		ak := builtinAccessKey.DeepCopy()
+		err = td.Kube.Create(td.Ctx, ak)
+		td.Require.NoError(err, "create access key")
 
-		return sa
+		return ak
 	}
 
-	waitForReconcile := func(td TestData, sa *v1.MinioServiceAccount) {
+	waitForReconcile := func(td TestData, ak *v1.MinioAccessKey) {
 		RunOperatorUntil(td, func() error {
-			err := td.Kube.Get(td.Ctx, client.ObjectKeyFromObject(sa), sa)
-			td.Require.NoError(err, "waiting for service account reconcile")
-			if sa.Status.CurrentSpec == nil {
+			err := td.Kube.Get(td.Ctx, client.ObjectKeyFromObject(ak), ak)
+			td.Require.NoError(err, "waiting for access key reconcile")
+			if ak.Status.CurrentSpec == nil {
 				return nil
 			}
-			if !reflect.DeepEqual(sa.Spec, *sa.Status.CurrentSpec) {
+			if !reflect.DeepEqual(ak.Spec, *ak.Status.CurrentSpec) {
 				return nil
 			}
 			return StopIteration{}
 		})
 	}
 
-	t.Run("creates a minio service account", func(t *testing.T) {
+	t.Run("creates a minio access key", func(t *testing.T) {
 		td := Setup(t)
 
-		sa := createServiceAccount(td)
-		waitForReconcile(td, sa)
+		ak := createAccessKey(td)
+		waitForReconcile(td, ak)
 
-		_, err := td.Madmin.InfoServiceAccount(td.Ctx, *sa.Status.CurrentSpec.AccessKey)
-		td.Require.NoError(err, "check if service account exists")
+		_, err := td.Madmin.InfoServiceAccount(td.Ctx, *ak.Status.CurrentSpec.AccessKey)
+		td.Require.NoError(err, "check if access key exists")
 
 		secret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: sa.Status.CurrentSpec.TargetSecretName},
+			ObjectMeta: metav1.ObjectMeta{Name: ak.Status.CurrentSpec.TargetSecretName},
 		}
-		err = td.Kube.Get(td.Ctx, types.NamespacedName{Name: sa.Status.CurrentSpec.TargetSecretName, Namespace: sa.GetNamespace()}, secret)
+		err = td.Kube.Get(td.Ctx, types.NamespacedName{Name: ak.Status.CurrentSpec.TargetSecretName, Namespace: ak.GetNamespace()}, secret)
 		td.Require.NoError(err, "check if secret exists")
-		td.Require.Equal(secret.Data["accessKey"], []byte(*sa.Status.CurrentSpec.AccessKey), "check if secret access key matches")
+		td.Require.Equal(secret.Data["accessKey"], []byte(*ak.Status.CurrentSpec.AccessKey), "check if secret access key matches")
 		td.Require.NotEmpty(secret.Data["secretKey"], "check if secret secret key is set")
 	})
 
-	t.Run("deletes a minio service account", func(t *testing.T) {
+	t.Run("deletes a minio access key", func(t *testing.T) {
 		td := Setup(t)
 
-		sa := createServiceAccount(td)
-		waitForReconcile(td, sa)
+		ak := createAccessKey(td)
+		waitForReconcile(td, ak)
 
-		err := td.Kube.Delete(td.Ctx, sa)
-		td.Require.NoError(err, "delete service account object")
-		WaitForDelete(td, sa)
+		err := td.Kube.Delete(td.Ctx, ak)
+		td.Require.NoError(err, "delete access key object")
+		WaitForDelete(td, ak)
 
-		_, err = td.Madmin.InfoServiceAccount(td.Ctx, *sa.Status.CurrentSpec.AccessKey)
+		_, err = td.Madmin.InfoServiceAccount(td.Ctx, *ak.Status.CurrentSpec.AccessKey)
 
 		merr := &madmin.ErrorResponse{}
 		td.Require.ErrorAs(err, merr, "check expected error type")
 		td.Require.Equal(merr.Code, "XMinioInvalidIAMCredentials", "check expected error code")
 
 		secret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: sa.Status.CurrentSpec.TargetSecretName},
+			ObjectMeta: metav1.ObjectMeta{Name: ak.Status.CurrentSpec.TargetSecretName},
 		}
-		err = td.Kube.Get(td.Ctx, types.NamespacedName{Name: sa.Status.CurrentSpec.TargetSecretName, Namespace: sa.GetNamespace()}, secret)
+		err = td.Kube.Get(td.Ctx, types.NamespacedName{Name: ak.Status.CurrentSpec.TargetSecretName, Namespace: ak.GetNamespace()}, secret)
 		td.Require.Error(err, "check if secret is removed")
 	})
 }
