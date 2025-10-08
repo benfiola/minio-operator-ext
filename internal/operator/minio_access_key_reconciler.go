@@ -73,10 +73,10 @@ func (r *minioAccessKeyReconciler) Reconcile(ctx context.Context, req reconcile.
 		l.Info("marked for deletion")
 		err = r.deleteAccessKey(ctx, l, ak)
 		if err != nil {
-			return failedReconcilliation(err)
+			return r.fail(err)
 		}
 
-		return successfulReconcilliation(r.syncInterval)
+		return r.succeed()
 	}
 
 	if !controllerutil.ContainsFinalizer(ak, finalizer) {
@@ -84,10 +84,10 @@ func (r *minioAccessKeyReconciler) Reconcile(ctx context.Context, req reconcile.
 		controllerutil.AddFinalizer(ak, finalizer)
 		err = r.Update(ctx, ak)
 		if err != nil {
-			return failedReconcilliation(err)
+			return r.fail(err)
 		}
 
-		return successfulReconcilliation(r.syncInterval)
+		return r.succeed()
 	}
 
 	if ak.Status.CurrentSpec != nil {
@@ -95,9 +95,9 @@ func (r *minioAccessKeyReconciler) Reconcile(ctx context.Context, req reconcile.
 
 		err := r.updateAccessKey(ctx, ak, l)
 		if err != nil {
-			return failedReconcilliation(err)
+			return r.fail(err)
 		}
-		return successfulReconcilliation(r.syncInterval)
+		return r.succeed()
 	}
 
 	if ak.Status.CurrentSpec == nil {
@@ -105,18 +105,18 @@ func (r *minioAccessKeyReconciler) Reconcile(ctx context.Context, req reconcile.
 
 		creds, err := r.createAccessKey(ctx, l, ak)
 		if err != nil {
-			return failedReconcilliation(err)
+			return r.fail(err)
 		}
 
 		err = r.createCredentialsSecret(ctx, l, ak, creds)
 		if err != nil {
-			return failedReconcilliation(err)
+			return r.fail(err)
 		}
 
-		return successfulReconcilliation(r.syncInterval)
+		return r.succeed()
 	}
 
-	return successfulReconcilliation(r.syncInterval)
+	return r.succeed()
 }
 
 func (r *minioAccessKeyReconciler) updateAccessKey(ctx context.Context, sa *v1.MinioAccessKey, l logr.Logger) error {
@@ -314,10 +314,10 @@ func (r *minioAccessKeyReconciler) createCredentialsSecret(ctx context.Context, 
 	return r.Create(ctx, desired)
 }
 
-func successfulReconcilliation(duration time.Duration) (reconcile.Result, error) {
-	return reconcile.Result{RequeueAfter: duration}, nil
+func (r *minioAccessKeyReconciler) succeed() (reconcile.Result, error) {
+	return reconcile.Result{RequeueAfter: r.syncInterval}, nil
 }
 
-func failedReconcilliation(err error) (reconcile.Result, error) {
+func (r *minioAccessKeyReconciler) fail(err error) (reconcile.Result, error) {
 	return reconcile.Result{}, err
 }
