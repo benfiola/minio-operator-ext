@@ -129,7 +129,7 @@ func (r *minioAccessKeyReconciler) updateAccessKey(ctx context.Context, sa *v1.M
 		}
 	}
 
-	if sa.Status.CurrentSpec.AccessKey == nil {
+	if sa.Status.CurrentSpec.AccessKey == "" {
 		return fmt.Errorf("access key is required. Resource: name=%s namespace=%s", sa.GetName(), sa.GetNamespace())
 	}
 
@@ -140,7 +140,7 @@ func (r *minioAccessKeyReconciler) updateAccessKey(ctx context.Context, sa *v1.M
 	}
 
 	l.Info("get minio access key")
-	_, err = mtac.InfoServiceAccount(ctx, *sa.Status.CurrentSpec.AccessKey)
+	_, err = mtac.InfoServiceAccount(ctx, sa.Status.CurrentSpec.AccessKey)
 	e := !isMadminErrorCode(err, "XMinioInvalidIAMCredentials")
 	err = ignoreMadminErrorCode(err, "XMinioInvalidIAMCredentials")
 	if err != nil {
@@ -170,16 +170,16 @@ func (r *minioAccessKeyReconciler) createAccessKey(ctx context.Context, l logr.L
 		return nil, err
 	}
 
-	if sa.Spec.AccessKey != nil {
+	if sa.Spec.AccessKey != "" {
 		if sa.Spec.Migrate {
 			return nil, fmt.Errorf("cannot migrate access key without access key. Resource: name=%s namespace=%s", sa.GetName(), sa.GetNamespace())
 		}
 
 		l.Info("get minio access key")
-		_, err = mtac.InfoServiceAccount(ctx, *sa.Spec.AccessKey)
+		_, err = mtac.InfoServiceAccount(ctx, sa.Spec.AccessKey)
 		exists := err == nil
 		if exists && !sa.Spec.Migrate {
-			err = fmt.Errorf("access key %s already exists", *sa.Spec.AccessKey)
+			err = fmt.Errorf("access key %s already exists", sa.Spec.AccessKey)
 		}
 		err = ignoreMadminErrorCode(err, "XMinioInvalidIAMCredentials")
 		if err != nil {
@@ -188,25 +188,25 @@ func (r *minioAccessKeyReconciler) createAccessKey(ctx context.Context, l logr.L
 	}
 
 	req := madmin.AddServiceAccountReq{
-		TargetUser: sa.Spec.TargetUser,
+		TargetUser: sa.Spec.User.Builtin,
 		// TODO: implement
 		// Policy:      nil,
 		// Expiration:  sa.Spec.Expiration,
 	}
 
-	if sa.Spec.Name != nil {
-		req.Name = *sa.Spec.Name
+	if sa.Spec.Name != "" {
+		req.Name = sa.Spec.Name
 	}
-	if sa.Spec.Description != nil {
-		req.Description = *sa.Spec.Description
+	if sa.Spec.Description != "" {
+		req.Description = sa.Spec.Description
 	}
 
-	if sa.Spec.AccessKey != nil {
-		req.AccessKey = *sa.Spec.AccessKey
+	if sa.Spec.AccessKey != "" {
+		req.AccessKey = sa.Spec.AccessKey
 	}
 
 	// SecretKeyRef is specified, use the secret key
-	if sa.Spec.SecretKeyRef != nil {
+	if sa.Spec.SecretKeyRef != (v1.ResourceKeyRef{}) {
 		secret := &corev1.Secret{}
 		err := r.Get(ctx, types.NamespacedName{Name: sa.Spec.SecretKeyRef.Name, Namespace: sa.Spec.SecretKeyRef.Namespace}, secret)
 		if err != nil {
@@ -224,7 +224,7 @@ func (r *minioAccessKeyReconciler) createAccessKey(ctx context.Context, l logr.L
 	l.Info("set status")
 	sa.Spec.Migrate = false
 	sa.Status.CurrentSpec = &sa.Spec
-	sa.Status.CurrentSpec.AccessKey = &creds.AccessKey
+	sa.Status.CurrentSpec.AccessKey = creds.AccessKey
 	err = r.Update(ctx, sa)
 	if err != nil {
 		return nil, err
@@ -237,7 +237,7 @@ func (r *minioAccessKeyReconciler) deleteAccessKey(ctx context.Context, l logr.L
 	if sa.Status.CurrentSpec != nil {
 		l.Info("delete access key (status set)")
 
-		if sa.Status.CurrentSpec.AccessKey == nil {
+		if sa.Status.CurrentSpec.AccessKey == "" {
 			return fmt.Errorf("access key is required. Resource: name=%s namespace=%s", sa.GetName(), sa.GetNamespace())
 		}
 
@@ -248,7 +248,7 @@ func (r *minioAccessKeyReconciler) deleteAccessKey(ctx context.Context, l logr.L
 		}
 
 		l.Info("delete minio access key")
-		err = mtac.DeleteServiceAccount(ctx, *sa.Status.CurrentSpec.AccessKey)
+		err = mtac.DeleteServiceAccount(ctx, sa.Status.CurrentSpec.AccessKey)
 		err = ignoreMadminErrorCode(err, "XMinioInvalidIAMCredentials")
 		if err != nil {
 			return err
@@ -297,7 +297,7 @@ func (r *minioAccessKeyReconciler) createCredentialsSecret(ctx context.Context, 
 	desired := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: sa.GetNamespace(),
-			Name:      sa.Spec.TargetSecretName,
+			Name:      sa.Spec.SecretName,
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{

@@ -115,7 +115,7 @@ var (
 	})
 	builtinAccessKey = CreateTestObject(&v1.MinioAccessKey{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "builtin-minio-service-account"},
-		Spec:       v1.MinioAccessKeySpec{Name: &[]string{"builtin-minio-service-account"}[0], TargetUser: builtinUser.Spec.AccessKey, TargetSecretName: "builtin-minio-service-account-credentials-secret", TenantRef: v1.ResourceRef{Name: "tenant"}},
+		Spec:       v1.MinioAccessKeySpec{Name: "builtin-minio-service-account", User: v1.MinioAccessKeyIdentity{Builtin: builtinUser.Spec.AccessKey}, SecretName: "builtin-minio-service-account-credentials-secret", TenantRef: v1.ResourceRef{Name: "tenant"}},
 	})
 )
 
@@ -1885,15 +1885,15 @@ func TestMinioAccessKey(t *testing.T) {
 		ak := createAccessKey(td)
 		waitForReconcile(td, ak)
 
-		_, err := td.Madmin.InfoServiceAccount(td.Ctx, *ak.Status.CurrentSpec.AccessKey)
+		_, err := td.Madmin.InfoServiceAccount(td.Ctx, ak.Status.CurrentSpec.AccessKey)
 		td.Require.NoError(err, "check if access key exists")
 
 		secret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: ak.Status.CurrentSpec.TargetSecretName},
+			ObjectMeta: metav1.ObjectMeta{Name: ak.Status.CurrentSpec.SecretName},
 		}
-		err = td.Kube.Get(td.Ctx, types.NamespacedName{Name: ak.Status.CurrentSpec.TargetSecretName, Namespace: ak.GetNamespace()}, secret)
+		err = td.Kube.Get(td.Ctx, types.NamespacedName{Name: ak.Status.CurrentSpec.SecretName, Namespace: ak.GetNamespace()}, secret)
 		td.Require.NoError(err, "check if secret exists")
-		td.Require.Equal(secret.Data["accessKey"], []byte(*ak.Status.CurrentSpec.AccessKey), "check if secret access key matches")
+		td.Require.Equal(secret.Data["accessKey"], []byte(ak.Status.CurrentSpec.AccessKey), "check if secret access key matches")
 		td.Require.NotEmpty(secret.Data["secretKey"], "check if secret secret key is set")
 	})
 
@@ -1907,16 +1907,16 @@ func TestMinioAccessKey(t *testing.T) {
 		td.Require.NoError(err, "delete access key object")
 		WaitForDelete(td, ak)
 
-		_, err = td.Madmin.InfoServiceAccount(td.Ctx, *ak.Status.CurrentSpec.AccessKey)
+		_, err = td.Madmin.InfoServiceAccount(td.Ctx, ak.Status.CurrentSpec.AccessKey)
 
 		merr := &madmin.ErrorResponse{}
 		td.Require.ErrorAs(err, merr, "check expected error type")
 		td.Require.Equal(merr.Code, "XMinioInvalidIAMCredentials", "check expected error code")
 
 		secret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: ak.Status.CurrentSpec.TargetSecretName},
+			ObjectMeta: metav1.ObjectMeta{Name: ak.Status.CurrentSpec.SecretName},
 		}
-		err = td.Kube.Get(td.Ctx, types.NamespacedName{Name: ak.Status.CurrentSpec.TargetSecretName, Namespace: ak.GetNamespace()}, secret)
+		err = td.Kube.Get(td.Ctx, types.NamespacedName{Name: ak.Status.CurrentSpec.SecretName, Namespace: ak.GetNamespace()}, secret)
 		td.Require.Error(err, "check if secret is removed")
 	})
 }

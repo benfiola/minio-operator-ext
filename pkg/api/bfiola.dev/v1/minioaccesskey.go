@@ -40,8 +40,8 @@ type MinioAccessKey struct {
 	Status MinioAccessKeyStatus `json:"status,omitempty"`
 }
 
-// MinioAccessKeyUser represents an identity attached to a MinioAccessKey
-type MinioAccessKeyUser struct {
+// MinioAccessKeyIdentity represents an identity attached to a MinioAccessKey
+type MinioAccessKeyIdentity struct {
 	Builtin string `json:"builtin,omitempty"`
 	Ldap    string `json:"ldap,omitempty"`
 }
@@ -69,7 +69,7 @@ type MinioAccessKeySpec struct {
 	// +kubebuilder:validation:Required
 	TenantRef ResourceRef `json:"tenantRef"`
 	// +kubebuilder:validation:Required
-	User MinioAccessKeyUser `json:"user,omitempty"`
+	User MinioAccessKeyIdentity `json:"user,omitempty"`
 }
 
 // MinioAccessKeyStatus defines the current state of MinioAccessKey
