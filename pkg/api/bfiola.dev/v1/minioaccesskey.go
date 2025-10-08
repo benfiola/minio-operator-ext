@@ -55,11 +55,10 @@ type MinioAccessKeyPolicy struct {
 // MinioAccessKeySpec defines the desired state of MinioAccessKey
 type MinioAccessKeySpec struct {
 	// populated by reconciler
-	AccessKey      string `json:"accessKey,omitempty"`
-	Description    string `json:"description,omitempty"`
-	Expiry         string `json:"expiry,omitempty"`
-	ExpiryDuration string `json:"expiryDuration,omitempty"`
-	Migrate        bool   `json:"migrate,omitempty"`
+	AccessKey   string      `json:"accessKey,omitempty"`
+	Description string      `json:"description,omitempty"`
+	Expiry      metav1.Time `json:"expiry,omitempty"`
+	Migrate     bool        `json:"migrate,omitempty"`
 	// +kubebuilder:validation:Required
 	Name   string               `json:"name"`
 	Policy MinioAccessKeyPolicy `json:"policy,omitempty"`
