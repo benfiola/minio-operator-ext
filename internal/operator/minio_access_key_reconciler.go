@@ -187,36 +187,47 @@ func (r *minioAccessKeyReconciler) createAccessKey(ctx context.Context, l logr.L
 		}
 	}
 
-	req := madmin.AddServiceAccountReq{
-		TargetUser: sa.Spec.User.Builtin,
-		// TODO: implement
-		// Policy:      nil,
-		// Expiration:  sa.Spec.Expiration,
+	var expiration *time.Time
+	if sa.Spec.Expiration != nil {
+		t := sa.Spec.Expiration.Time
+		expiration = &t
 	}
 
-	if sa.Spec.Name != "" {
-		req.Name = sa.Spec.Name
-	}
-	if sa.Spec.Description != "" {
-		req.Description = sa.Spec.Description
-	}
-
-	if sa.Spec.AccessKey != "" {
-		req.AccessKey = sa.Spec.AccessKey
-	}
-
-	// SecretKeyRef is specified, use the secret key
+	secretKey := ""
 	if sa.Spec.SecretKeyRef != (v1.ResourceKeyRef{}) {
 		secret := &corev1.Secret{}
 		err := r.Get(ctx, types.NamespacedName{Name: sa.Spec.SecretKeyRef.Name, Namespace: sa.Spec.SecretKeyRef.Namespace}, secret)
 		if err != nil {
 			return nil, err
 		}
-		req.SecretKey = string(secret.Data[sa.Spec.SecretKeyRef.Key])
+		secretKey = string(secret.Data[sa.Spec.SecretKeyRef.Key])
+	}
+
+	ldap := false
+	user := sa.Spec.User.Builtin
+	if sa.Spec.User.Ldap != "" {
+		user = sa.Spec.User.Ldap
+		ldap = true
+	}
+
+	req := madmin.AddServiceAccountReq{
+		AccessKey:   sa.Spec.AccessKey,
+		Description: sa.Spec.Description,
+		Expiration:  expiration,
+		Name:        sa.Spec.Name,
+		SecretKey:   secretKey,
+		TargetUser:  user,
+		// TODO: implement
+		// Policy:      nil,
 	}
 
 	l.Info("create minio access key")
-	creds, err := mtac.AddServiceAccount(ctx, req)
+	var creds madmin.Credentials
+	if ldap {
+		creds, err = mtac.AddServiceAccountLDAP(ctx, req)
+	} else {
+		creds, err = mtac.AddServiceAccount(ctx, req)
+	}
 	if err != nil {
 		return nil, err
 	}

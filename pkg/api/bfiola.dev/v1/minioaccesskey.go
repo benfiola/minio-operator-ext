@@ -57,7 +57,7 @@ type MinioAccessKeySpec struct {
 	// populated by reconciler
 	AccessKey   string       `json:"accessKey,omitempty"`
 	Description string       `json:"description,omitempty"`
-	Expiry      *metav1.Time `json:"expiry,omitempty"`
+	Expiration  *metav1.Time `json:"expiration,omitempty"`
 	Migrate     bool         `json:"migrate,omitempty"`
 	// +kubebuilder:validation:Required
 	Name   string               `json:"name"`
