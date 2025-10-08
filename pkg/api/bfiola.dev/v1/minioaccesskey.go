@@ -40,28 +40,37 @@ type MinioAccessKey struct {
 	Status MinioAccessKeyStatus `json:"status,omitempty"`
 }
 
+// MinioAccessKeyUser represents an identity attached to a MinioAccessKey
+type MinioAccessKeyUser struct {
+	Builtin string `json:"builtin,omitempty"`
+	Ldap    string `json:"ldap,omitempty"`
+}
+
+// MinioAccessKeyPolicy represents a policy attached to a MinioAccessKey
+type MinioAccessKeyPolicy struct {
+	Statement []MinioPolicyStatement `json:"statement"`
+	Version   string                 `json:"version"`
+}
+
 // MinioAccessKeySpec defines the desired state of MinioAccessKey
 type MinioAccessKeySpec struct {
-	Migrate bool `json:"migrate,omitempty"`
-
-	Name        *string `json:"name,omitempty"`
-	Description *string `json:"description,omitempty"`
-
+	// populated by reconciler
+	AccessKey      string `json:"accessKey,omitempty"`
+	Description    string `json:"description,omitempty"`
+	Expiry         string `json:"expiry,omitempty"`
+	ExpiryDuration string `json:"expiryDuration,omitempty"`
+	Migrate        bool   `json:"migrate,omitempty"`
 	// +kubebuilder:validation:Required
-	TargetUser string `json:"targetUser,omitempty"`
-
-	AccessKey    *string         `json:"accessKey,omitempty"`
-	SecretKeyRef *ResourceKeyRef `json:"secretKeyRef,omitempty"`
-
+	Name   string               `json:"name"`
+	Policy MinioAccessKeyPolicy `json:"policy,omitempty"`
+	// populated by reconciler
+	SecretKeyRef ResourceKeyRef `json:"secretKeyRef,omitempty"`
 	// +kubebuilder:validation:Required
-	TargetSecretName string `json:"targetSecretName"`
-
-	// TODO: add policy
-	// TODO: add expiration
-	// Expiration *time.Time `json:"expiration,omitempty"`
-	// Policy     json.RawMessage `json:"policy,omitempty"`
-
+	SecretName string `json:"secretName"`
+	// +kubebuilder:validation:Required
 	TenantRef ResourceRef `json:"tenantRef"`
+	// +kubebuilder:validation:Required
+	User MinioAccessKeyUser `json:"user,omitempty"`
 }
 
 // MinioAccessKeyStatus defines the current state of MinioAccessKey
