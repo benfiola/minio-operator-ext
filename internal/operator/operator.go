@@ -45,7 +45,9 @@ import (
 )
 
 const (
-	finalizer = "bfiola.dev/minio-operator-ext"
+	finalizer               = "bfiola.dev/minio-operator-ext"
+	AccessKeyFieldAccessKey = "accessKey"
+	AccessKeyFieldSecretKey = "secretKey"
 )
 
 // Returns a pointer to [v].

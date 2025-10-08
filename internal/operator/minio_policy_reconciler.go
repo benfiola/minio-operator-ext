@@ -71,6 +71,18 @@ func getHash(o interface{}) string {
 		d = append(d, strings.Join(a, ","))
 		hw.Write([]byte(strings.Join(d, "|")))
 	}
+	makp, ok := o.(*v1.MinioAccessKeyPolicy)
+	if ok {
+		var d []string
+		var a []string
+		d = append(d, makp.Version)
+		for _, ps := range makp.Statement {
+			a = append(a, getHash(ps))
+		}
+		slices.Sort(a)
+		d = append(d, strings.Join(a, ","))
+		hw.Write([]byte(strings.Join(d, "|")))
+	}
 	mpst, ok := o.(v1.MinioPolicyStatement)
 	if ok {
 		var d []string

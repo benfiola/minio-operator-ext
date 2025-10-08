@@ -27,9 +27,8 @@ import (
 // +kubebuilder:printcolumn:name="Tenant Name",type=string,description="Tenant Name",JSONPath=`.status.currentSpec.tenantRef.name`
 // +kubebuilder:printcolumn:name="Name",type=string,description="Name",JSONPath=`.status.currentSpec.name`
 
-// MinioAccessKey defines a MinIO builtin service account identity.
-// NOTE: in the minio API this is called a service account,
-// but the documentation refers to it as an access key
+// MinioAccessKey defines a MinIO access key - a set of child credentials belonging to a parent MinIO user.
+// NOTE: Historically, this feature was called 'Service Accounts'.
 // https://docs.min.io/community/minio-object-store/administration/identity-access-management/minio-user-management.html#access-keys
 type MinioAccessKey struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -40,34 +39,41 @@ type MinioAccessKey struct {
 	Status MinioAccessKeyStatus `json:"status,omitempty"`
 }
 
+// MinioAccessKeyIdentity represents an identity attached to a MinioAccessKey
+type MinioAccessKeyIdentity struct {
+	Builtin string `json:"builtin,omitempty"`
+	Ldap    string `json:"ldap,omitempty"`
+}
+
+// MinioAccessKeyPolicy represents a policy attached to a MinioAccessKey
+type MinioAccessKeyPolicy struct {
+	Statement []MinioPolicyStatement `json:"statement,omitempty"`
+	Version   string                 `json:"version,omitempty"`
+}
+
 // MinioAccessKeySpec defines the desired state of MinioAccessKey
 type MinioAccessKeySpec struct {
-	Migrate bool `json:"migrate,omitempty"`
-
-	Name        *string `json:"name,omitempty"`
-	Description *string `json:"description,omitempty"`
-
+	// populated by reconciler
+	AccessKey    string               `json:"accessKey,omitempty"`
+	Description  string               `json:"description,omitempty"`
+	Expiration   *metav1.Time         `json:"expiration,omitempty"`
+	Migrate      bool                 `json:"migrate,omitempty"`
+	Name         string               `json:"name"`
+	Policy       MinioAccessKeyPolicy `json:"policy,omitempty"`
+	SecretKeyRef ResourceKeyRef       `json:"secretKeyRef,omitempty"`
 	// +kubebuilder:validation:Required
-	TargetUser string `json:"targetUser,omitempty"`
-
-	AccessKey    *string         `json:"accessKey,omitempty"`
-	SecretKeyRef *ResourceKeyRef `json:"secretKeyRef,omitempty"`
-
+	SecretName string `json:"secretName"`
 	// +kubebuilder:validation:Required
-	TargetSecretName string `json:"targetSecretName"`
-
-	// TODO: add policy
-	// TODO: add expiration
-	// Expiration *time.Time `json:"expiration,omitempty"`
-	// Policy     json.RawMessage `json:"policy,omitempty"`
-
 	TenantRef ResourceRef `json:"tenantRef"`
+	// +kubebuilder:validation:Required
+	User MinioAccessKeyIdentity `json:"user,omitempty"`
 }
 
 // MinioAccessKeyStatus defines the current state of MinioAccessKey
 type MinioAccessKeyStatus struct {
-	Synced      *bool               `json:"synced,omitempty"`
-	CurrentSpec *MinioAccessKeySpec `json:"currentSpec,omitempty"`
+	Synced                       *bool               `json:"synced,omitempty"`
+	CurrentSpec                  *MinioAccessKeySpec `json:"currentSpec,omitempty"`
+	CurrentSecretResourceVersion string              `json:"currentSecretResourceVersion,omitempty"`
 }
 
 // +k8s:deepcopy-gen=true

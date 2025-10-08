@@ -4,7 +4,7 @@
       "extensions": [
         "esbenp.prettier-vscode",
         "ethan-reesor.exp-vscode-go",
-        "golang.go",
+        "golang.go@prerelease",
         "rohit-gohri.format-code-action",
         "ms-vscode.makefile-tools"
       ],
@@ -14,8 +14,6 @@
           "source.formatDocument"
         ],
         "editor.defaultFormatter": "esbenp.prettier-vscode",
-        "exp-vscode-go.testExplorer.enable": true,
-        "go.testExplorer.enable": false,
         "go.testFlags": ["-v", "-count=1"],
         "go.testTimeout": "300s",
         "launch": {
@@ -52,6 +50,7 @@
     "MC_DISABLE_PAGER": "1",
     "MC_INSECURE": "1",
     "KUBECONFIG": "/workspaces/minio-operator-ext/.dev/kube-config.yaml",
+    "MINIKUBE_HOME": "/workspaces/minio-operator-ext/.dev/.minikube",
     "PATH": "/workspaces/minio-operator-ext/.dev:${containerEnv:PATH}"
   }
 }
