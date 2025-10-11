@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"time"
 
 	v1 "github.com/benfiola/minio-operator-ext/pkg/api/bfiola.dev/v1"
@@ -141,7 +142,7 @@ func (r *minioAccessKeyReconciler) updateAccessKey(ctx context.Context, sa *v1.M
 	}
 
 	l.Info("get minio access key")
-	_, err = mtac.InfoServiceAccount(ctx, sa.Status.CurrentSpec.AccessKey)
+	msa, err := mtac.InfoServiceAccount(ctx, sa.Status.CurrentSpec.AccessKey)
 	e := !isMadminErrorCode(err, "XMinioInvalidIAMCredentials")
 	err = ignoreMadminErrorCode(err, "XMinioInvalidIAMCredentials")
 	if err != nil {
@@ -158,8 +159,55 @@ func (r *minioAccessKeyReconciler) updateAccessKey(ctx context.Context, sa *v1.M
 		return err
 	}
 
-	// TODO: update access key
-	// mtac.UpdateServiceAccount(ctx, sa.Status.CurrentSpec.AccessKey, madmin.UpdateServiceAccountReq{})
+	var cExpiration *time.Time
+	if sa.Status.CurrentSpec.Expiration != nil {
+		t := sa.Status.CurrentSpec.Expiration.Time
+		cExpiration = &t
+	}
+
+	// TODO: handle policy changes (how is policy represented in the info endpoint response)
+	if msa.Description != sa.Status.CurrentSpec.Description || !reflect.DeepEqual(msa.Expiration, cExpiration) || msa.Name != sa.Status.CurrentSpec.Name {
+		l.Info("update service account (status and remote differ)")
+		err := mtac.UpdateServiceAccount(ctx, sa.Status.CurrentSpec.AccessKey, madmin.UpdateServiceAccountReq{
+			NewDescription: sa.Status.CurrentSpec.Description,
+			NewExpiration:  cExpiration,
+			NewName:        sa.Status.CurrentSpec.Name,
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	if sa.Status.CurrentSpec.Description != sa.Spec.Description || !reflect.DeepEqual(sa.Status.CurrentSpec.Expiration, sa.Spec.Expiration) || sa.Status.CurrentSpec.Name != sa.Spec.Name || getHash(sa.Status.CurrentSpec.Policy) != getHash(sa.Spec.Policy) {
+		l.Info("update service account (status and spec differ)")
+
+		var expiration *time.Time
+		if sa.Spec.Expiration != nil {
+			t := sa.Spec.Expiration.Time
+			expiration = &t
+		}
+
+		policy := []byte{}
+		if getHash(sa.Spec.Policy) != getHash(v1.MinioAccessKeyPolicy{}) {
+			policy, err = json.Marshal(map[string]any{
+				"statement": sa.Spec.Policy.Statement,
+				"version":   sa.Spec.Policy.Version,
+			})
+			if err != nil {
+				return err
+			}
+		}
+
+		err := mtac.UpdateServiceAccount(ctx, sa.Status.CurrentSpec.AccessKey, madmin.UpdateServiceAccountReq{
+			NewDescription: sa.Spec.Description,
+			NewExpiration:  expiration,
+			NewPolicy:      policy,
+			NewName:        sa.Spec.Name,
+		})
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -314,7 +362,7 @@ func (r *minioAccessKeyReconciler) getAdminClient(ctx context.Context, name, nam
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=create
 
 func (r *minioAccessKeyReconciler) createCredentialsSecret(ctx context.Context, l logr.Logger, sa *v1.MinioAccessKey, creds *madmin.Credentials) error {
-	l.Info("create or update credentials secret")
+	l.Info("create credentials secret")
 
 	desired := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
