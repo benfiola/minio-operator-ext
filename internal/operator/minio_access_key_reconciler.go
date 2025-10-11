@@ -18,6 +18,7 @@ package operator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -193,6 +194,17 @@ func (r *minioAccessKeyReconciler) createAccessKey(ctx context.Context, l logr.L
 		expiration = &t
 	}
 
+	policy := []byte{}
+	if getHash(sa.Spec.Policy) != getHash(v1.MinioAccessKeyPolicy{}) {
+		policy, err = json.Marshal(map[string]any{
+			"statement": sa.Spec.Policy.Statement,
+			"version":   sa.Spec.Policy.Version,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	secretKey := ""
 	if sa.Spec.SecretKeyRef != (v1.ResourceKeyRef{}) {
 		secret := &corev1.Secret{}
@@ -216,9 +228,8 @@ func (r *minioAccessKeyReconciler) createAccessKey(ctx context.Context, l logr.L
 		Expiration:  expiration,
 		Name:        sa.Spec.Name,
 		SecretKey:   secretKey,
+		Policy:      policy,
 		TargetUser:  user,
-		// TODO: implement
-		// Policy:      nil,
 	}
 
 	l.Info("create minio access key")
@@ -233,9 +244,9 @@ func (r *minioAccessKeyReconciler) createAccessKey(ctx context.Context, l logr.L
 	}
 
 	l.Info("set status")
+	sa.Spec.AccessKey = creds.AccessKey
 	sa.Spec.Migrate = false
 	sa.Status.CurrentSpec = &sa.Spec
-	sa.Status.CurrentSpec.AccessKey = creds.AccessKey
 	err = r.Update(ctx, sa)
 	if err != nil {
 		return nil, err
