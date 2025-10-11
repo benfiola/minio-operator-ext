@@ -114,8 +114,12 @@ var (
 		Spec:       v1.MinioPolicyBindingSpec{User: v1.MinioPolicyBindingIdentity{Ldap: "ldap-user1"}, Policy: policy.Spec.Name, TenantRef: v1.ResourceRef{Name: "tenant"}},
 	})
 	builtinAccessKey = CreateTestObject(&v1.MinioAccessKey{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "builtin-minio-service-account"},
-		Spec:       v1.MinioAccessKeySpec{Name: "builtin-minio-service-account", User: v1.MinioAccessKeyIdentity{Builtin: builtinUser.Spec.AccessKey}, SecretName: "builtin-minio-service-account-credentials-secret", TenantRef: v1.ResourceRef{Name: "tenant"}},
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "builtin-minio-access-key"},
+		Spec:       v1.MinioAccessKeySpec{Name: "builtin-minio-access-key", User: v1.MinioAccessKeyIdentity{Builtin: builtinUser.Spec.AccessKey}, SecretName: "builtin-minio-access-key-credentials-secret", TenantRef: v1.ResourceRef{Name: "tenant"}},
+	})
+	ldapAccessKey = CreateTestObject(&v1.MinioAccessKey{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "ldap-minio-service-account"},
+		Spec:       v1.MinioAccessKeySpec{Name: "ldap-minio-access-key", User: v1.MinioAccessKeyIdentity{Ldap: "cn=ldap-user1,ou=users,dc=example,dc=org"}, SecretName: "ldap-minio-service-account-credentials-secret", TenantRef: v1.ResourceRef{Name: "tenant"}},
 	})
 )
 
@@ -1848,7 +1852,7 @@ func TestMinioUser(t *testing.T) {
 }
 
 func TestMinioAccessKey(t *testing.T) {
-	createAccessKey := func(td TestData) *v1.MinioAccessKey {
+	createBuiltinAccessKey := func(td TestData) *v1.MinioAccessKey {
 		td.T.Helper()
 
 		us := builtinUserSecret.DeepCopy()
@@ -1860,7 +1864,17 @@ func TestMinioAccessKey(t *testing.T) {
 
 		ak := builtinAccessKey.DeepCopy()
 		err = td.Kube.Create(td.Ctx, ak)
-		td.Require.NoError(err, "create access key")
+		td.Require.NoError(err, "create builtin access key")
+
+		return ak
+	}
+
+	createLdapAccessKey := func(td TestData) *v1.MinioAccessKey {
+		td.T.Helper()
+
+		ak := ldapAccessKey.DeepCopy()
+		err := td.Kube.Create(td.Ctx, ak)
+		td.Require.NoError(err, "create ldap access key")
 
 		return ak
 	}
@@ -1879,10 +1893,29 @@ func TestMinioAccessKey(t *testing.T) {
 		})
 	}
 
-	t.Run("creates a minio access key", func(t *testing.T) {
+	t.Run("creates a builtin minio access key", func(t *testing.T) {
 		td := Setup(t)
 
-		ak := createAccessKey(td)
+		ak := createBuiltinAccessKey(td)
+		waitForReconcile(td, ak)
+
+		_, err := td.Madmin.InfoServiceAccount(td.Ctx, ak.Status.CurrentSpec.AccessKey)
+		td.Require.NoError(err, "check if access key exists")
+
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: ak.Status.CurrentSpec.SecretName},
+		}
+		err = td.Kube.Get(td.Ctx, types.NamespacedName{Name: ak.Status.CurrentSpec.SecretName, Namespace: ak.GetNamespace()}, secret)
+		td.Require.NoError(err, "check if secret exists")
+		td.Require.Equal(secret.Data["accessKey"], []byte(ak.Status.CurrentSpec.AccessKey), "check if secret access key matches")
+		td.Require.NotEmpty(secret.Data["secretKey"], "check if secret secret key is set")
+	})
+
+	t.Run("creates an ldap minio access key", func(t *testing.T) {
+		td := Setup(t)
+		SetMinioLDAPIdentityProvider(td)
+
+		ak := createLdapAccessKey(td)
 		waitForReconcile(td, ak)
 
 		_, err := td.Madmin.InfoServiceAccount(td.Ctx, ak.Status.CurrentSpec.AccessKey)
@@ -1900,7 +1933,7 @@ func TestMinioAccessKey(t *testing.T) {
 	t.Run("deletes a minio access key", func(t *testing.T) {
 		td := Setup(t)
 
-		ak := createAccessKey(td)
+		ak := createBuiltinAccessKey(td)
 		waitForReconcile(td, ak)
 
 		err := td.Kube.Delete(td.Ctx, ak)

@@ -27,9 +27,8 @@ import (
 // +kubebuilder:printcolumn:name="Tenant Name",type=string,description="Tenant Name",JSONPath=`.status.currentSpec.tenantRef.name`
 // +kubebuilder:printcolumn:name="Name",type=string,description="Name",JSONPath=`.status.currentSpec.name`
 
-// MinioAccessKey defines a MinIO builtin service account identity.
-// NOTE: in the minio API this is called a service account,
-// but the documentation refers to it as an access key
+// MinioAccessKey defines a MinIO access key - a set of child credentials belonging to a parent MinIO user.
+// NOTE: Historically, this feature was called 'Service Accounts'.
 // https://docs.min.io/community/minio-object-store/administration/identity-access-management/minio-user-management.html#access-keys
 type MinioAccessKey struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -48,8 +47,8 @@ type MinioAccessKeyIdentity struct {
 
 // MinioAccessKeyPolicy represents a policy attached to a MinioAccessKey
 type MinioAccessKeyPolicy struct {
-	Statement []MinioPolicyStatement `json:"statement"`
-	Version   string                 `json:"version"`
+	Statement []MinioPolicyStatement `json:"statement,omitempty"`
+	Version   string                 `json:"version,omitempty"`
 }
 
 // MinioAccessKeySpec defines the desired state of MinioAccessKey

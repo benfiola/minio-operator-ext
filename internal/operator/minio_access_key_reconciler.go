@@ -167,7 +167,7 @@ func (r *minioAccessKeyReconciler) updateAccessKey(ctx context.Context, sa *v1.M
 
 	// TODO: handle policy changes (how is policy represented in the info endpoint response)
 	if msa.Description != sa.Status.CurrentSpec.Description || !reflect.DeepEqual(msa.Expiration, cExpiration) || msa.Name != sa.Status.CurrentSpec.Name {
-		l.Info("update service account (status and remote differ)")
+		l.Info("update access key (status and remote differ)")
 		err := mtac.UpdateServiceAccount(ctx, sa.Status.CurrentSpec.AccessKey, madmin.UpdateServiceAccountReq{
 			NewDescription: sa.Status.CurrentSpec.Description,
 			NewExpiration:  cExpiration,
@@ -179,7 +179,7 @@ func (r *minioAccessKeyReconciler) updateAccessKey(ctx context.Context, sa *v1.M
 	}
 
 	if sa.Status.CurrentSpec.Description != sa.Spec.Description || !reflect.DeepEqual(sa.Status.CurrentSpec.Expiration, sa.Spec.Expiration) || sa.Status.CurrentSpec.Name != sa.Spec.Name || getHash(sa.Status.CurrentSpec.Policy) != getHash(sa.Spec.Policy) {
-		l.Info("update service account (status and spec differ)")
+		l.Info("update access key (status and spec differ)")
 
 		var expiration *time.Time
 		if sa.Spec.Expiration != nil {
