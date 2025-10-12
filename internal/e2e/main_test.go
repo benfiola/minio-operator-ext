@@ -119,7 +119,7 @@ var (
 	})
 	ldapAccessKey = CreateTestObject(&v1.MinioAccessKey{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "ldap-minio-service-account"},
-		Spec:       v1.MinioAccessKeySpec{Name: "ldap-minio-access-key", User: v1.MinioAccessKeyIdentity{Ldap: "cn=ldap-user1,ou=users,dc=example,dc=org"}, SecretName: "ldap-minio-service-account-credentials-secret", TenantRef: v1.ResourceRef{Name: "tenant"}},
+		Spec:       v1.MinioAccessKeySpec{Name: "ldap-minio-access-key", User: v1.MinioAccessKeyIdentity{Ldap: "ldap-user1"}, SecretName: "ldap-minio-service-account-credentials-secret", TenantRef: v1.ResourceRef{Name: "tenant"}},
 	})
 )
 

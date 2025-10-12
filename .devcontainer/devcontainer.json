@@ -50,6 +50,7 @@
     "MC_DISABLE_PAGER": "1",
     "MC_INSECURE": "1",
     "KUBECONFIG": "/workspaces/minio-operator-ext/.dev/kube-config.yaml",
+    "MINIKUBE_HOME": "/workspaces/minio-operator-ext/.dev/.minikube",
     "PATH": "/workspaces/minio-operator-ext/.dev:${containerEnv:PATH}"
   }
 }
