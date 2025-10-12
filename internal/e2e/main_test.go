@@ -1872,8 +1872,16 @@ func TestMinioAccessKey(t *testing.T) {
 	createLdapAccessKey := func(td TestData) *v1.MinioAccessKey {
 		td.T.Helper()
 
+		// NOTE: it appears for LDAP, a policy needs to be bound to the user
+		p := policy.DeepCopy()
+		err := td.Kube.Create(td.Ctx, p)
+		td.Require.NoError(err, "create user policy")
+		pb := policyToLdapUserShort.DeepCopy()
+		err = td.Kube.Create(td.Ctx, pb)
+		td.Require.NoError(err, "create user policy binding")
+
 		ak := ldapAccessKey.DeepCopy()
-		err := td.Kube.Create(td.Ctx, ak)
+		err = td.Kube.Create(td.Ctx, ak)
 		td.Require.NoError(err, "create ldap access key")
 
 		return ak
@@ -1889,6 +1897,7 @@ func TestMinioAccessKey(t *testing.T) {
 			if !reflect.DeepEqual(ak.Spec, *ak.Status.CurrentSpec) {
 				return nil
 			}
+
 			return StopIteration{}
 		})
 	}

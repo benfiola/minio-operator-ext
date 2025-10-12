@@ -78,6 +78,20 @@ func (r *minioAccessKeyReconciler) Reconcile(ctx context.Context, req reconcile.
 			return r.fail(err)
 		}
 
+		l.Info("clear status")
+		ak.Status.CurrentSpec = nil
+		err := r.Update(ctx, ak)
+		if err != nil {
+			return r.fail(err)
+		}
+
+		l.Info("clear finalizer")
+		controllerutil.RemoveFinalizer(ak, finalizer)
+		err = r.Update(ctx, ak)
+		if err != nil {
+			return r.fail(err)
+		}
+
 		return r.succeed()
 	}
 
@@ -99,6 +113,14 @@ func (r *minioAccessKeyReconciler) Reconcile(ctx context.Context, req reconcile.
 		if err != nil {
 			return r.fail(err)
 		}
+
+		l.Info("set status")
+		ak.Status.CurrentSpec = &ak.Spec
+		err = r.Update(ctx, ak)
+		if err != nil {
+			return r.fail(err)
+		}
+
 		return r.succeed()
 	}
 
@@ -115,34 +137,42 @@ func (r *minioAccessKeyReconciler) Reconcile(ctx context.Context, req reconcile.
 			return r.fail(err)
 		}
 
+		l.Info("set status")
+		ak.Spec.AccessKey = creds.AccessKey
+		ak.Status.CurrentSpec = &ak.Spec
+		err = r.Update(ctx, ak)
+		if err != nil {
+			return r.fail(err)
+		}
+
 		return r.succeed()
 	}
 
 	return r.succeed()
 }
 
-func (r *minioAccessKeyReconciler) updateAccessKey(ctx context.Context, sa *v1.MinioAccessKey, l logr.Logger) error {
-	if sa.Spec.Migrate {
+func (r *minioAccessKeyReconciler) updateAccessKey(ctx context.Context, ak *v1.MinioAccessKey, l logr.Logger) error {
+	if ak.Spec.Migrate {
 		l.Info("remove migrate spec field")
-		sa.Spec.Migrate = false
-		err := r.Update(ctx, sa)
+		ak.Spec.Migrate = false
+		err := r.Update(ctx, ak)
 		if err != nil {
 			return err
 		}
 	}
 
-	if sa.Status.CurrentSpec.AccessKey == "" {
-		return fmt.Errorf("access key is required. Resource: name=%s namespace=%s", sa.GetName(), sa.GetNamespace())
+	if ak.Status.CurrentSpec.AccessKey == "" {
+		return fmt.Errorf("access key is required. Resource: name=%s namespace=%s", ak.GetName(), ak.GetNamespace())
 	}
 
 	l.Info("get tenant admin client")
-	mtac, err := r.getAdminClient(ctx, sa.Status.CurrentSpec.TenantRef.Name, sa.GetNamespace())
+	mtac, err := r.getAdminClient(ctx, ak.Status.CurrentSpec.TenantRef.Name, ak.GetNamespace())
 	if err != nil {
 		return err
 	}
 
 	l.Info("get minio access key")
-	msa, err := mtac.InfoServiceAccount(ctx, sa.Status.CurrentSpec.AccessKey)
+	msa, err := mtac.InfoServiceAccount(ctx, ak.Status.CurrentSpec.AccessKey)
 	e := !isMadminErrorCode(err, "XMinioInvalidIAMCredentials")
 	err = ignoreMadminErrorCode(err, "XMinioInvalidIAMCredentials")
 	if err != nil {
@@ -150,8 +180,8 @@ func (r *minioAccessKeyReconciler) updateAccessKey(ctx context.Context, sa *v1.M
 	}
 	if !e {
 		l.Info("clear status (minio access key no longer exists)")
-		sa.Status.CurrentSpec = nil
-		err = r.Update(ctx, sa)
+		ak.Status.CurrentSpec = nil
+		err = r.Update(ctx, ak)
 		if err != nil {
 			return err
 		}
@@ -160,49 +190,60 @@ func (r *minioAccessKeyReconciler) updateAccessKey(ctx context.Context, sa *v1.M
 	}
 
 	var cExpiration *time.Time
-	if sa.Status.CurrentSpec.Expiration != nil {
-		t := sa.Status.CurrentSpec.Expiration.Time
+	if ak.Status.CurrentSpec.Expiration != nil {
+		t := ak.Status.CurrentSpec.Expiration.Time
 		cExpiration = &t
 	}
 
-	// TODO: handle policy changes (how is policy represented in the info endpoint response)
-	if msa.Description != sa.Status.CurrentSpec.Description || !reflect.DeepEqual(msa.Expiration, cExpiration) || msa.Name != sa.Status.CurrentSpec.Name {
+	mPolicy := v1.MinioAccessKeyPolicy{}
+	if !msa.ImpliedPolicy && msa.Policy != "" {
+		mp, err := mtac.InfoCannedPolicyV2(ctx, msa.Policy)
+		if err != nil {
+			return err
+		}
+		err = json.Unmarshal(mp.Policy, &mPolicy)
+		if err != nil {
+			return err
+		}
+	}
+
+	if msa.Description != ak.Status.CurrentSpec.Description || !reflect.DeepEqual(msa.Expiration, cExpiration) || msa.Name != ak.Status.CurrentSpec.Name || getHash(mPolicy) != getHash(ak.Status.CurrentSpec.Policy) {
 		l.Info("update access key (status and remote differ)")
-		err := mtac.UpdateServiceAccount(ctx, sa.Status.CurrentSpec.AccessKey, madmin.UpdateServiceAccountReq{
-			NewDescription: sa.Status.CurrentSpec.Description,
+		err := mtac.UpdateServiceAccount(ctx, ak.Status.CurrentSpec.AccessKey, madmin.UpdateServiceAccountReq{
+			NewDescription: ak.Status.CurrentSpec.Description,
 			NewExpiration:  cExpiration,
-			NewName:        sa.Status.CurrentSpec.Name,
+			NewName:        ak.Status.CurrentSpec.Name,
 		})
 		if err != nil {
 			return err
 		}
 	}
 
-	if sa.Status.CurrentSpec.Description != sa.Spec.Description || !reflect.DeepEqual(sa.Status.CurrentSpec.Expiration, sa.Spec.Expiration) || sa.Status.CurrentSpec.Name != sa.Spec.Name || getHash(sa.Status.CurrentSpec.Policy) != getHash(sa.Spec.Policy) {
+	if ak.Status.CurrentSpec.Description != ak.Spec.Description || !reflect.DeepEqual(ak.Status.CurrentSpec.Expiration, ak.Spec.Expiration) || ak.Status.CurrentSpec.Name != ak.Spec.Name || getHash(ak.Status.CurrentSpec.Policy) != getHash(ak.Spec.Policy) {
 		l.Info("update access key (status and spec differ)")
 
 		var expiration *time.Time
-		if sa.Spec.Expiration != nil {
-			t := sa.Spec.Expiration.Time
+		if ak.Spec.Expiration != nil {
+			t := ak.Spec.Expiration.Time
 			expiration = &t
 		}
 
 		policy := []byte{}
-		if getHash(sa.Spec.Policy) != getHash(v1.MinioAccessKeyPolicy{}) {
+		if getHash(ak.Spec.Policy) != getHash(v1.MinioAccessKeyPolicy{}) {
 			policy, err = json.Marshal(map[string]any{
-				"statement": sa.Spec.Policy.Statement,
-				"version":   sa.Spec.Policy.Version,
+				"statement": ak.Spec.Policy.Statement,
+				"version":   ak.Spec.Policy.Version,
 			})
 			if err != nil {
 				return err
 			}
 		}
 
-		err := mtac.UpdateServiceAccount(ctx, sa.Status.CurrentSpec.AccessKey, madmin.UpdateServiceAccountReq{
-			NewDescription: sa.Spec.Description,
+		err := mtac.UpdateServiceAccount(ctx, ak.Status.CurrentSpec.AccessKey, madmin.UpdateServiceAccountReq{
+			NewDescription: ak.Spec.Description,
 			NewExpiration:  expiration,
 			NewPolicy:      policy,
-			NewName:        sa.Spec.Name,
+			NewName:        ak.Spec.Name,
 		})
 		if err != nil {
 			return err
@@ -212,23 +253,23 @@ func (r *minioAccessKeyReconciler) updateAccessKey(ctx context.Context, sa *v1.M
 	return nil
 }
 
-func (r *minioAccessKeyReconciler) createAccessKey(ctx context.Context, l logr.Logger, sa *v1.MinioAccessKey) (*madmin.Credentials, error) {
+func (r *minioAccessKeyReconciler) createAccessKey(ctx context.Context, l logr.Logger, ak *v1.MinioAccessKey) (*madmin.Credentials, error) {
 	l.Info("get tenant admin client")
-	mtac, err := r.getAdminClient(ctx, sa.Spec.TenantRef.Name, sa.GetNamespace())
+	mtac, err := r.getAdminClient(ctx, ak.Spec.TenantRef.Name, ak.GetNamespace())
 	if err != nil {
 		return nil, err
 	}
 
-	if sa.Spec.AccessKey != "" {
-		if sa.Spec.Migrate {
-			return nil, fmt.Errorf("cannot migrate access key without access key. Resource: name=%s namespace=%s", sa.GetName(), sa.GetNamespace())
+	if ak.Spec.AccessKey != "" {
+		if ak.Spec.Migrate {
+			return nil, fmt.Errorf("cannot migrate access key without access key. Resource: name=%s namespace=%s", ak.GetName(), ak.GetNamespace())
 		}
 
 		l.Info("get minio access key")
-		_, err = mtac.InfoServiceAccount(ctx, sa.Spec.AccessKey)
+		_, err = mtac.InfoServiceAccount(ctx, ak.Spec.AccessKey)
 		exists := err == nil
-		if exists && !sa.Spec.Migrate {
-			err = fmt.Errorf("access key %s already exists", sa.Spec.AccessKey)
+		if exists && !ak.Spec.Migrate {
+			err = fmt.Errorf("access key %s already exists", ak.Spec.AccessKey)
 		}
 		err = ignoreMadminErrorCode(err, "XMinioInvalidIAMCredentials")
 		if err != nil {
@@ -237,16 +278,16 @@ func (r *minioAccessKeyReconciler) createAccessKey(ctx context.Context, l logr.L
 	}
 
 	var expiration *time.Time
-	if sa.Spec.Expiration != nil {
-		t := sa.Spec.Expiration.Time
+	if ak.Spec.Expiration != nil {
+		t := ak.Spec.Expiration.Time
 		expiration = &t
 	}
 
-	policy := []byte{}
-	if getHash(sa.Spec.Policy) != getHash(v1.MinioAccessKeyPolicy{}) {
+	var policy []byte
+	if getHash(ak.Spec.Policy) != getHash(v1.MinioAccessKeyPolicy{}) {
 		policy, err = json.Marshal(map[string]any{
-			"statement": sa.Spec.Policy.Statement,
-			"version":   sa.Spec.Policy.Version,
+			"statement": ak.Spec.Policy.Statement,
+			"version":   ak.Spec.Policy.Version,
 		})
 		if err != nil {
 			return nil, err
@@ -254,27 +295,31 @@ func (r *minioAccessKeyReconciler) createAccessKey(ctx context.Context, l logr.L
 	}
 
 	secretKey := ""
-	if sa.Spec.SecretKeyRef != (v1.ResourceKeyRef{}) {
+	if ak.Spec.SecretKeyRef != (v1.ResourceKeyRef{}) {
 		secret := &corev1.Secret{}
-		err := r.Get(ctx, types.NamespacedName{Name: sa.Spec.SecretKeyRef.Name, Namespace: sa.Spec.SecretKeyRef.Namespace}, secret)
+		err := r.Get(ctx, types.NamespacedName{Name: ak.Spec.SecretKeyRef.Name, Namespace: ak.Spec.SecretKeyRef.Namespace}, secret)
 		if err != nil {
 			return nil, err
 		}
-		secretKey = string(secret.Data[sa.Spec.SecretKeyRef.Key])
+		bSecretKey, ok := secret.Data[ak.Spec.SecretKeyRef.Key]
+		if !ok {
+			return nil, fmt.Errorf("secretKeyRef key '%s' not found", ak.Spec.SecretKeyRef.Key)
+		}
+		secretKey = string(bSecretKey)
 	}
 
 	ldap := false
-	user := sa.Spec.User.Builtin
-	if sa.Spec.User.Ldap != "" {
-		user = sa.Spec.User.Ldap
+	user := ak.Spec.User.Builtin
+	if ak.Spec.User.Ldap != "" {
+		user = ak.Spec.User.Ldap
 		ldap = true
 	}
 
 	req := madmin.AddServiceAccountReq{
-		AccessKey:   sa.Spec.AccessKey,
-		Description: sa.Spec.Description,
+		AccessKey:   ak.Spec.AccessKey,
+		Description: ak.Spec.Description,
 		Expiration:  expiration,
-		Name:        sa.Spec.Name,
+		Name:        ak.Spec.Name,
 		SecretKey:   secretKey,
 		Policy:      policy,
 		TargetUser:  user,
@@ -291,54 +336,31 @@ func (r *minioAccessKeyReconciler) createAccessKey(ctx context.Context, l logr.L
 		return nil, err
 	}
 
-	l.Info("set status")
-	sa.Spec.AccessKey = creds.AccessKey
-	sa.Spec.Migrate = false
-	sa.Status.CurrentSpec = &sa.Spec
-	err = r.Update(ctx, sa)
-	if err != nil {
-		return nil, err
-	}
-
 	return &creds, nil
 }
 
-func (r *minioAccessKeyReconciler) deleteAccessKey(ctx context.Context, l logr.Logger, sa *v1.MinioAccessKey) error {
-	if sa.Status.CurrentSpec != nil {
+func (r *minioAccessKeyReconciler) deleteAccessKey(ctx context.Context, l logr.Logger, ak *v1.MinioAccessKey) error {
+	if ak.Status.CurrentSpec != nil {
 		l.Info("delete access key (status set)")
 
-		if sa.Status.CurrentSpec.AccessKey == "" {
-			return fmt.Errorf("access key is required. Resource: name=%s namespace=%s", sa.GetName(), sa.GetNamespace())
+		if ak.Status.CurrentSpec.AccessKey == "" {
+			return fmt.Errorf("access key is required. Resource: name=%s namespace=%s", ak.GetName(), ak.GetNamespace())
 		}
 
 		l.Info("get tenant admin client")
-		mtac, err := r.getAdminClient(ctx, sa.Status.CurrentSpec.TenantRef.Name, sa.GetNamespace())
+		mtac, err := r.getAdminClient(ctx, ak.Status.CurrentSpec.TenantRef.Name, ak.GetNamespace())
 		if err != nil {
 			return err
 		}
 
 		l.Info("delete minio access key")
-		err = mtac.DeleteServiceAccount(ctx, sa.Status.CurrentSpec.AccessKey)
+		err = mtac.DeleteServiceAccount(ctx, ak.Status.CurrentSpec.AccessKey)
 		err = ignoreMadminErrorCode(err, "XMinioInvalidIAMCredentials")
 		if err != nil {
 			return err
 		}
 
-		l.Info("clear status")
-		sa.Status.CurrentSpec = nil
-		err = r.Update(ctx, sa)
-		if err != nil {
-			return err
-		}
-
 		return nil
-	}
-
-	l.Info("clear finalizer")
-	controllerutil.RemoveFinalizer(sa, finalizer)
-	err := r.Update(ctx, sa)
-	if err != nil {
-		return err
 	}
 
 	return nil
@@ -361,22 +383,22 @@ func (r *minioAccessKeyReconciler) getAdminClient(ctx context.Context, name, nam
 
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=create
 
-func (r *minioAccessKeyReconciler) createCredentialsSecret(ctx context.Context, l logr.Logger, sa *v1.MinioAccessKey, creds *madmin.Credentials) error {
+func (r *minioAccessKeyReconciler) createCredentialsSecret(ctx context.Context, l logr.Logger, ak *v1.MinioAccessKey, creds *madmin.Credentials) error {
 	l.Info("create credentials secret")
 
 	desired := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: sa.GetNamespace(),
-			Name:      sa.Spec.SecretName,
+			Namespace: ak.GetNamespace(),
+			Name:      ak.Spec.SecretName,
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
-			"accessKey": []byte(creds.AccessKey),
-			"secretKey": []byte(creds.SecretKey),
+			accessKeyFieldAccessKey: []byte(creds.AccessKey),
+			accessKeyFieldSecretKey: []byte(creds.SecretKey),
 		},
 	}
 
-	err := controllerutil.SetOwnerReference(sa, desired, r.Scheme())
+	err := controllerutil.SetOwnerReference(ak, desired, r.Scheme())
 	if err != nil {
 		return err
 	}
