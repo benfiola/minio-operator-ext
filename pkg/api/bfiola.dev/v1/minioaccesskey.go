@@ -72,8 +72,9 @@ type MinioAccessKeySpec struct {
 
 // MinioAccessKeyStatus defines the current state of MinioAccessKey
 type MinioAccessKeyStatus struct {
-	Synced      *bool               `json:"synced,omitempty"`
-	CurrentSpec *MinioAccessKeySpec `json:"currentSpec,omitempty"`
+	Synced                       *bool               `json:"synced,omitempty"`
+	CurrentSpec                  *MinioAccessKeySpec `json:"currentSpec,omitempty"`
+	CurrentSecretResourceVersion string              `json:"currentSecretResourceVersion,omitempty"`
 }
 
 // +k8s:deepcopy-gen=true
