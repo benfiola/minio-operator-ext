@@ -1929,9 +1929,9 @@ func TestMinioAccessKey(t *testing.T) {
 
 		secret := getGeneratedSecret(td, ak)
 		accessKey := string(secret.Data[operator.AccessKeyFieldAccessKey])
+		td.Require.Equal(ak.Spec.AccessKey, accessKey, "check if spec access key is set to generated secret accessKey")
 		td.Require.NotEmpty(accessKey, "check if generated secret accessKey is set")
 		td.Require.NotEmpty(secret.Data[operator.AccessKeyFieldSecretKey], "check if generated secret secretKey is set")
-
 		_, err := td.Madmin.InfoServiceAccount(td.Ctx, accessKey)
 		td.Require.NoError(err, "check minio access key exists")
 	})
@@ -1945,6 +1945,7 @@ func TestMinioAccessKey(t *testing.T) {
 
 		secret := getGeneratedSecret(td, ak)
 		accessKey := string(secret.Data[operator.AccessKeyFieldAccessKey])
+		td.Require.Equal(ak.Spec.AccessKey, accessKey, "check if spec access key is set to generated secret accessKey")
 		td.Require.NotEmpty(accessKey, "check if generated secret accessKey is set")
 		td.Require.NotEmpty(secret.Data[operator.AccessKeyFieldSecretKey], "check if generated secret secretKey is set")
 
@@ -2282,6 +2283,8 @@ func TestMinioAccessKey(t *testing.T) {
 		ak := createBuiltinAccessKey(td)
 		waitForReconcile(td, ak)
 
+		accessKey := ak.Spec.AccessKey
+
 		secret := getGeneratedSecret(td, ak)
 		err := td.Kube.Delete(td.Ctx, secret)
 		td.Require.NoError(err, "delete generated secret")
@@ -2297,10 +2300,11 @@ func TestMinioAccessKey(t *testing.T) {
 			return StopIteration{}
 		})
 
-		getGeneratedSecret(td, ak)
+		secret = getGeneratedSecret(td, ak)
+		td.Require.Equal(accessKey, string(secret.Data[operator.AccessKeyFieldAccessKey]), "regenerated secret reuses access key")
 	})
 
-	t.Run("regenerates generated secret when using a new name", func(t *testing.T) {
+	t.Run("regenerates generated secret when using a new secret name", func(t *testing.T) {
 		td := Setup(t)
 
 		ak := createBuiltinAccessKey(td)

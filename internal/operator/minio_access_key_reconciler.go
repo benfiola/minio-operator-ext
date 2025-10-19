@@ -154,6 +154,9 @@ func (r *minioAccessKeyReconciler) Reconcile(ctx context.Context, req reconcile.
 		}
 
 		l.Info("set status")
+		// ensure that attempts to regenerate the secret use the same access key
+		accessKey := string(secret.Data["accessKey"])
+		ak.Spec.AccessKey = accessKey
 		ak.Spec.Migrate = false
 		ak.Status.CurrentSpec = &ak.Spec
 		ak.Status.CurrentSecretResourceVersion = secret.ResourceVersion
