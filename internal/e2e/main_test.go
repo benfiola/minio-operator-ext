@@ -2344,6 +2344,20 @@ func TestMinioAccessKey(t *testing.T) {
 		td.Require.Error(err, "check if secret is removed")
 	})
 
+	t.Run("does not block deletion reconciliation when generated secret is deleted", func(t *testing.T) {
+		td := Setup(t)
+
+		ak := createBuiltinAccessKey(td)
+		waitForReconcile(td, ak)
+
+		secret := getGeneratedSecret(td, ak)
+		err := td.Kube.Delete(td.Ctx, secret)
+		td.Require.NoError(err, "delete generated secret resource")
+		err = td.Kube.Delete(td.Ctx, ak)
+		td.Require.NoError(err, "delete access key resource")
+		WaitForDelete(td, ak)
+	})
+
 	t.Run("ensure resource version stabilizes", func(t *testing.T) {
 		td := Setup(t)
 
