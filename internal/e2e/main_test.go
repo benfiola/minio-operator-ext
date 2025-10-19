@@ -1912,9 +1912,7 @@ func TestMinioAccessKey(t *testing.T) {
 	getGeneratedSecret := func(td TestData, ak *v1.MinioAccessKey) *corev1.Secret {
 		td.T.Helper()
 
-		secret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: ak.Status.CurrentSpec.SecretName},
-		}
+		secret := &corev1.Secret{}
 		err := td.Kube.Get(td.Ctx, types.NamespacedName{Name: ak.Status.CurrentSpec.SecretName, Namespace: ak.GetNamespace()}, secret)
 		td.Require.NoError(err, "check if generated secret exists")
 
@@ -2360,6 +2358,124 @@ func TestMinioAccessKey(t *testing.T) {
 		err = td.Kube.Delete(td.Ctx, ak)
 		td.Require.NoError(err, "delete access key resource")
 		WaitForDelete(td, ak)
+	})
+
+	t.Run("does not create minio access key if one exists", func(t *testing.T) {
+		td := Setup(t)
+
+		us := builtinUserSecret.DeepCopy()
+		err := td.Kube.Create(td.Ctx, us)
+		td.Require.NoError(err, "create user secret object")
+		u := builtinUser.DeepCopy()
+		err = td.Kube.Create(td.Ctx, u)
+		td.Require.NoError(err, "create user object")
+		RunOperatorUntil(td, func() error {
+			err := td.Kube.Get(td.Ctx, client.ObjectKeyFromObject(u), u)
+			td.Require.NoError(err, "waiting for user reconcile")
+			if u.Status.CurrentSpec == nil {
+				return nil
+			}
+			if !reflect.DeepEqual(u.Spec, *u.Status.CurrentSpec) {
+				return nil
+			}
+			return StopIteration{}
+		})
+
+		accessKey := "testing"
+		_, err = td.Madmin.AddServiceAccount(td.Ctx, madmin.AddServiceAccountReq{TargetUser: u.Spec.AccessKey, AccessKey: accessKey, SecretKey: "secretKey"})
+		td.Require.NoError(err, "create minio access key")
+
+		ak := builtinAccessKey.DeepCopy()
+		ak.Spec.AccessKey = accessKey
+		err = td.Kube.Create(td.Ctx, ak)
+		td.Require.NoError(err, "create access key resource")
+
+		WaitForReconcilerError(td, func(err error) error {
+			if err == nil {
+				return nil
+			}
+			if !strings.Contains(err.Error(), "service account access key already taken") {
+				return nil
+			}
+			return StopIteration{}
+		})
+
+		secret := &corev1.Secret{}
+		err = td.Kube.Get(td.Ctx, types.NamespacedName{Name: ak.Spec.SecretName, Namespace: ak.GetNamespace()}, secret)
+		td.Require.True(errors.IsNotFound(err), "check if generated secret is deleted")
+	})
+
+	t.Run("does not autogenerate credentials for migrated minio access keys", func(t *testing.T) {
+		td := Setup(t)
+
+		us := builtinUserSecret.DeepCopy()
+		err := td.Kube.Create(td.Ctx, us)
+		td.Require.NoError(err, "create user secret object")
+		u := builtinUser.DeepCopy()
+		err = td.Kube.Create(td.Ctx, u)
+		td.Require.NoError(err, "create user object")
+		RunOperatorUntil(td, func() error {
+			err := td.Kube.Get(td.Ctx, client.ObjectKeyFromObject(u), u)
+			td.Require.NoError(err, "waiting for user reconcile")
+			if u.Status.CurrentSpec == nil {
+				return nil
+			}
+			if !reflect.DeepEqual(u.Spec, *u.Status.CurrentSpec) {
+				return nil
+			}
+			return StopIteration{}
+		})
+
+		ak := builtinAccessKey.DeepCopy()
+		ak.Spec.Migrate = true
+		err = td.Kube.Create(td.Ctx, ak)
+		td.Require.NoError(err, "create access key resource")
+
+		WaitForReconcilerError(td, func(err error) error {
+			if err == nil {
+				return nil
+			}
+			if err.Error() != "cannot determine desired credentials for migrated access key" {
+				return nil
+			}
+			return StopIteration{}
+		})
+	})
+
+	t.Run("supports migrating existing minio access keys", func(t *testing.T) {
+		td := Setup(t)
+
+		us := builtinUserSecret.DeepCopy()
+		err := td.Kube.Create(td.Ctx, us)
+		td.Require.NoError(err, "create user secret object")
+		u := builtinUser.DeepCopy()
+		err = td.Kube.Create(td.Ctx, u)
+		td.Require.NoError(err, "create user object")
+		RunOperatorUntil(td, func() error {
+			err := td.Kube.Get(td.Ctx, client.ObjectKeyFromObject(u), u)
+			td.Require.NoError(err, "waiting for user reconcile")
+			if u.Status.CurrentSpec == nil {
+				return nil
+			}
+			if !reflect.DeepEqual(u.Spec, *u.Status.CurrentSpec) {
+				return nil
+			}
+			return StopIteration{}
+		})
+
+		accessKey := "testing"
+		_, err = td.Madmin.AddServiceAccount(td.Ctx, madmin.AddServiceAccountReq{TargetUser: u.Spec.AccessKey, AccessKey: accessKey, SecretKey: "secretKey"})
+		td.Require.NoError(err, "create minio access key")
+
+		ak := builtinAccessKey.DeepCopy()
+		ak.Spec.AccessKey = accessKey
+		ak.Spec.SecretKeyRef = v1.ResourceKeyRef{Namespace: us.GetNamespace(), Name: us.GetName(), Key: "SecretKey"}
+		ak.Spec.Migrate = true
+		err = td.Kube.Create(td.Ctx, ak)
+		td.Require.NoError(err, "create access key resource")
+		waitForReconcile(td, ak)
+
+		td.Require.False(ak.Spec.Migrate, "check if migrate flag is unset")
 	})
 
 	t.Run("ensure resource version stabilizes", func(t *testing.T) {

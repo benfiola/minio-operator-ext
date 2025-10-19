@@ -27,6 +27,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -52,8 +53,6 @@ type minioAccessKeyReconciler struct {
 	syncInterval           time.Duration
 }
 
-// +kubebuilder:rbac:groups=bfiola.dev,resources=minioaccesskeys,verbs=list;watch;
-
 // Builds a controller with a [minioAccessKeyReconciler].
 // Registers this controller with a [manager.Manager] instance.
 // Returns an error if a controller cannot be built.
@@ -67,7 +66,8 @@ func (r *minioAccessKeyReconciler) register(m manager.Manager) error {
 	return nil
 }
 
-// +kubebuilder:rbac:groups=bfiola.dev,resources=minioaccesskeys,verbs=get;update;
+// +kubebuilder:rbac:groups=bfiola.dev,resources=minioaccesskeys,verbs=get;list;update;watch;
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=create;delete;get;update;
 
 // Reconciles a [reconcile.Request] associated with a [v1.MinioAccessKey].
 // Returns a error if reconciliation fails.
@@ -171,8 +171,8 @@ func (r *minioAccessKeyReconciler) Reconcile(ctx context.Context, req reconcile.
 	return r.succeed()
 }
 
-// +kubebuilder:rbac:groups=bfiola.dev,resources=minioaccesskeys,verbs=update;
-
+// Updates the MinIO access key resource given a corresponding [v1.MinioAccessKey].
+// Returns an error on failure.
 func (r *minioAccessKeyReconciler) updateAccessKey(ctx context.Context, l logr.Logger, ak *v1.MinioAccessKey, secret *corev1.Secret) error {
 	if ak.Spec.Migrate {
 		l.Info("remove migrate spec field")
@@ -302,7 +302,7 @@ func (r *minioAccessKeyReconciler) updateAccessKey(ctx context.Context, l logr.L
 }
 
 // Creates a MinIO access key for the given resource.
-// If migrating the access key, ...
+// Returns an error on failure.
 func (r *minioAccessKeyReconciler) createAccessKey(ctx context.Context, l logr.Logger, ak *v1.MinioAccessKey, secret *corev1.Secret) error {
 	l.Info("get tenant admin client")
 	mtac, err := r.getAdminClient(ctx, ak.Spec.TenantRef.Name, ak.GetNamespace())
@@ -312,17 +312,6 @@ func (r *minioAccessKeyReconciler) createAccessKey(ctx context.Context, l logr.L
 
 	l.Info("get current credentials")
 	creds := r.getCredentialsFromSecret(secret)
-
-	l.Info("get minio access key")
-	_, err = mtac.InfoServiceAccount(ctx, creds.AccessKey)
-	exists := err == nil
-	if exists && !ak.Spec.Migrate {
-		err = fmt.Errorf("access key already exists")
-	}
-	err = ignoreMadminErrorCode(err, "XMinioInvalidIAMCredentials")
-	if err != nil {
-		return err
-	}
 
 	var expiration *time.Time
 	if ak.Spec.Expiration != nil {
@@ -364,6 +353,10 @@ func (r *minioAccessKeyReconciler) createAccessKey(ctx context.Context, l logr.L
 	} else {
 		_, err = mtac.AddServiceAccount(ctx, req)
 	}
+	alreadyExists := err != nil && strings.Contains(err.Error(), "service account access key already taken")
+	if alreadyExists && ak.Spec.Migrate {
+		err = nil
+	}
 	if err != nil {
 		return err
 	}
@@ -372,6 +365,7 @@ func (r *minioAccessKeyReconciler) createAccessKey(ctx context.Context, l logr.L
 }
 
 // Deletes a MinIO access key
+// Returns an error on failure
 func (r *minioAccessKeyReconciler) deleteAccessKey(ctx context.Context, l logr.Logger, ak *v1.MinioAccessKey) error {
 	if ak.Status.CurrentSpec != nil {
 		l.Info("delete access key (status set)")
@@ -425,8 +419,8 @@ func (r *minioAccessKeyReconciler) getAdminClient(ctx context.Context, name, nam
 	return mtac, nil
 }
 
-// +kubebuilder:rbac:groups=core,resources=secrets,verbs=create;
-
+// Creates the generated secret matching a MinIO access key resource.  Returns the created secret.
+// Returns an error on failure.
 func (r *minioAccessKeyReconciler) createCredentialsSecret(ctx context.Context, l logr.Logger, ak *v1.MinioAccessKey) (*corev1.Secret, error) {
 	l.Info("create credentials secret")
 
@@ -461,8 +455,8 @@ func (r *minioAccessKeyReconciler) createCredentialsSecret(ctx context.Context, 
 	return secret, nil
 }
 
-// +kubebuilder:rbac:groups=core,resources=secrets,verbs=delete;get;update;
-
+// Updates the generated secret matching a MinIO access key resource.  Returns the updated secret.
+// Returns an error on failure.
 func (r *minioAccessKeyReconciler) updateCredentialsSecret(ctx context.Context, l logr.Logger, ak *v1.MinioAccessKey) (*corev1.Secret, error) {
 	l.Info("get generated secret")
 	secret := &corev1.Secret{}
@@ -583,8 +577,6 @@ func (r *minioAccessKeyReconciler) getCredentialsFromSecret(secret *corev1.Secre
 	}
 	return &creds
 }
-
-// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;
 
 // Given a MinioAccessKey resource, determines the credentials for the resource
 // Determines whether credentials are explicitly defined in the resource spec.
