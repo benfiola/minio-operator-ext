@@ -14,6 +14,7 @@ Currently, this operator manages the following resources:
 - Group Membership (`MinioGroupBinding`)
 - Policies (`MinioPolicy`)
 - Policy Membership (`MinioPolicyBinding`)
+- Access Keys (`MinioAccessKey`)
 
 Examples of these resources can be found [here](./manifests/example-resources.yaml).
 

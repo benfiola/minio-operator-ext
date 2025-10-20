@@ -125,3 +125,27 @@ spec:
   tenantRef:
     namespace: minio-tenant
     name: myminio
+---
+apiVersion: bfiola.dev/v1
+kind: MinioAccessKey
+metadata:
+  name: builtin-access-key
+spec:
+  secretName: builtin-access-key
+  tenantRef:
+    namespace: minio-tenant
+    name: myminio
+  user:
+    builtin: builtin-user
+---
+apiVersion: bfiola.dev/v1
+kind: MinioAccessKey
+metadata:
+  name: ldap-access-key
+spec:
+  secretName: ldap-access-key
+  tenantRef:
+    namespace: minio-tenant
+    name: myminio
+  user:
+    ldap: ldap-user1
