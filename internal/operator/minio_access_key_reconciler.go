@@ -184,7 +184,7 @@ func (r *minioAccessKeyReconciler) updateAccessKey(ctx context.Context, l logr.L
 	}
 
 	l.Info("get tenant admin client")
-	mtac, err := r.getAdminClient(ctx, ak.Status.CurrentSpec.TenantRef.Name, ak.Status.CurrentSpec.TenantRef.Namespace)
+	mtac, err := r.getAdminClient(ctx, ak.Status.CurrentSpec.TenantRef, ak.GetNamespace())
 	if err != nil {
 		return err
 	}
@@ -305,7 +305,7 @@ func (r *minioAccessKeyReconciler) updateAccessKey(ctx context.Context, l logr.L
 // Returns an error on failure.
 func (r *minioAccessKeyReconciler) createAccessKey(ctx context.Context, l logr.Logger, ak *v1.MinioAccessKey, secret *corev1.Secret) error {
 	l.Info("get tenant admin client")
-	mtac, err := r.getAdminClient(ctx, ak.Spec.TenantRef.Name, ak.Status.CurrentSpec.TenantRef.Namespace)
+	mtac, err := r.getAdminClient(ctx, ak.Spec.TenantRef, ak.GetNamespace())
 	if err != nil {
 		return err
 	}
@@ -383,7 +383,7 @@ func (r *minioAccessKeyReconciler) deleteAccessKey(ctx context.Context, l logr.L
 		}
 
 		l.Info("get tenant admin client")
-		mtac, err := r.getAdminClient(ctx, ak.Status.CurrentSpec.TenantRef.Name, ak.Status.CurrentSpec.TenantRef.Namespace)
+		mtac, err := r.getAdminClient(ctx, ak.Status.CurrentSpec.TenantRef, ak.GetNamespace())
 		if err != nil {
 			return err
 		}
@@ -404,11 +404,9 @@ func (r *minioAccessKeyReconciler) deleteAccessKey(ctx context.Context, l logr.L
 
 // Helper function get the MinIO admin client for a tenant.
 // Returns an error if unable to fetch this admin client.
-func (r *minioAccessKeyReconciler) getAdminClient(ctx context.Context, name, namespace string) (*madmin.AdminClient, error) {
-	mtci, err := getMinioTenantClientInfo(ctx, r, v1.ResourceRef{
-		Name:      name,
-		Namespace: namespace,
-	}, minioTenantClientInfoOpts{minioOperatorNamespace: r.minioOperatorNamespace})
+func (r *minioAccessKeyReconciler) getAdminClient(ctx context.Context, tenantRef v1.ResourceRef, defaultNamespace string) (*madmin.AdminClient, error) {
+	tr := tenantRef.SetDefaultNamespace(defaultNamespace)
+	mtci, err := getMinioTenantClientInfo(ctx, r, tr, minioTenantClientInfoOpts{minioOperatorNamespace: r.minioOperatorNamespace})
 	if err != nil {
 		return nil, err
 	}
