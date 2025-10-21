@@ -184,7 +184,7 @@ func (r *minioAccessKeyReconciler) updateAccessKey(ctx context.Context, l logr.L
 	}
 
 	l.Info("get tenant admin client")
-	mtac, err := r.getAdminClient(ctx, ak.Status.CurrentSpec.TenantRef.Name, ak.GetNamespace())
+	mtac, err := r.getAdminClient(ctx, ak.Status.CurrentSpec.TenantRef.Name, ak.Status.CurrentSpec.TenantRef.Namespace)
 	if err != nil {
 		return err
 	}
@@ -305,7 +305,7 @@ func (r *minioAccessKeyReconciler) updateAccessKey(ctx context.Context, l logr.L
 // Returns an error on failure.
 func (r *minioAccessKeyReconciler) createAccessKey(ctx context.Context, l logr.Logger, ak *v1.MinioAccessKey, secret *corev1.Secret) error {
 	l.Info("get tenant admin client")
-	mtac, err := r.getAdminClient(ctx, ak.Spec.TenantRef.Name, ak.GetNamespace())
+	mtac, err := r.getAdminClient(ctx, ak.Spec.TenantRef.Name, ak.Status.CurrentSpec.TenantRef.Namespace)
 	if err != nil {
 		return err
 	}
@@ -383,7 +383,7 @@ func (r *minioAccessKeyReconciler) deleteAccessKey(ctx context.Context, l logr.L
 		}
 
 		l.Info("get tenant admin client")
-		mtac, err := r.getAdminClient(ctx, ak.Status.CurrentSpec.TenantRef.Name, ak.GetNamespace())
+		mtac, err := r.getAdminClient(ctx, ak.Status.CurrentSpec.TenantRef.Name, ak.Status.CurrentSpec.TenantRef.Namespace)
 		if err != nil {
 			return err
 		}
