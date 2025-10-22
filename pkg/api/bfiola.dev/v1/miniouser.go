@@ -37,9 +37,12 @@ type MinioUser struct {
 	Status MinioUserStatus `json:"status,omitempty"`
 }
 
+// +kubebuilder:validation:ExactlyOneOf:accessKey,accessKeyRef;
+
 // MinioUserSpec defines the desired state of MinioUser
 type MinioUserSpec struct {
-	AccessKey    string         `json:"accessKey"`
+	AccessKey    string         `json:"accessKey,omitempty"`
+	AccessKeyRef ResourceKeyRef `json:"accessKeyRef,omitempty"`
 	Migrate      bool           `json:"migrate,omitempty"`
 	SecretKeyRef ResourceKeyRef `json:"secretKeyRef"`
 	TenantRef    ResourceRef    `json:"tenantRef"`

@@ -96,6 +96,7 @@ func (rkr ResourceKeyRef) SetDefaultNamespace(ns string) ResourceKeyRef {
 		rkrns = ns
 	}
 	return ResourceKeyRef{
+		Key:       rkr.Key,
 		Name:      rkr.Name,
 		Namespace: rkrns,
 	}
