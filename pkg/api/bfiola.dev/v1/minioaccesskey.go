@@ -51,10 +51,12 @@ type MinioAccessKeyPolicy struct {
 	Version   string                 `json:"version,omitempty"`
 }
 
+// kubebuilder:validation:AtMostOneOf:accessKey,accessKeyRef;
+
 // MinioAccessKeySpec defines the desired state of MinioAccessKey
 type MinioAccessKeySpec struct {
-	// populated by reconciler
 	AccessKey    string               `json:"accessKey,omitempty"`
+	AccessKeyRef ResourceKeyRef       `json:"accessKeyRef,omitempty"`
 	Description  string               `json:"description,omitempty"`
 	Expiration   *metav1.Time         `json:"expiration,omitempty"`
 	Migrate      bool                 `json:"migrate,omitempty"`

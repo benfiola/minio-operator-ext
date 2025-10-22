@@ -76,7 +76,7 @@ var (
 	})
 	builtinUserSecret = CreateTestObject(&corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "builtin-user-secret"},
-		StringData: map[string]string{"SecretKey": "password"},
+		StringData: map[string]string{"AKAccessKey": "testing", "UserAccessKey": "builtin-user", "SecretKey": "password"},
 	})
 	builtinUser = CreateTestObject(&v1.MinioUser{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "builtin-minio-user"},
@@ -539,6 +539,15 @@ func WaitForReconcilerError(td TestData, cb func(err error) error) {
 		}
 		return nil
 	}, RunWithOperator(o))
+}
+
+// Checks whether the given credentials are valid against the test minio tenant
+func CheckCredentials(td TestData, accessKey string, secretKey string) {
+	c, err := madmin.New("minio.default.svc", accessKey, secretKey, true)
+	c.SetCustomTransport(&http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}})
+	td.Require.NoError(err, "create client with user credentials")
+	_, err = c.AccountInfo(td.Ctx, madmin.AccountOpts{})
+	td.Require.NoError(err, "check if user credentials valid")
 }
 
 func TestMinioBucket(t *testing.T) {
@@ -1729,14 +1738,34 @@ func TestMinioUser(t *testing.T) {
 		u := createUser(td)
 		waitForReconcile(td, u)
 
-		_, err := td.Madmin.GetUserInfo(td.Ctx, u.Spec.AccessKey)
+		accessKey := u.Spec.AccessKey
+		secretKey := builtinUserSecret.StringData["SecretKey"]
+
+		_, err := td.Madmin.GetUserInfo(td.Ctx, accessKey)
 		td.Require.NoError(err, "check if user exists")
 
-		c, err := madmin.New("minio.default.svc", u.Spec.AccessKey, builtinUserSecret.StringData["SecretKey"], true)
-		c.SetCustomTransport(&http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}})
-		td.Require.NoError(err, "create client with user credentials")
-		_, err = c.AccountInfo(td.Ctx, madmin.AccountOpts{})
-		td.Require.NoError(err, "check if user credentials valid")
+		CheckCredentials(td, accessKey, secretKey)
+	})
+
+	t.Run("creates a minio user via access key ref", func(t *testing.T) {
+		td := Setup(t)
+
+		u := createUser(td)
+		u.Spec.AccessKey = ""
+		u.Spec.AccessKeyRef = v1.ResourceKeyRef{Name: builtinUserSecret.Name, Key: "UserAccessKey"}
+		err := td.Kube.Update(td.Ctx, u)
+		td.Require.NoError(err, "update user")
+		waitForReconcile(td, u)
+
+		accessKey := builtinUserSecret.StringData["UserAccessKey"]
+		secretKey := builtinUserSecret.StringData["SecretKey"]
+
+		td.Require.Equal(u.Spec.AccessKey, accessKey, "set access key when reconciled")
+
+		_, err = td.Madmin.GetUserInfo(td.Ctx, accessKey)
+		td.Require.NoError(err, "check if user exists")
+
+		CheckCredentials(td, accessKey, secretKey)
 	})
 
 	t.Run("does not create a minio group if one exists", func(t *testing.T) {
@@ -1927,11 +1956,16 @@ func TestMinioAccessKey(t *testing.T) {
 
 		secret := getGeneratedSecret(td, ak)
 		accessKey := string(secret.Data[operator.AccessKeyFieldAccessKey])
+		secretKey := string(secret.Data[operator.AccessKeyFieldSecretKey])
+
 		td.Require.Equal(ak.Spec.AccessKey, accessKey, "check if spec access key is set to generated secret accessKey")
 		td.Require.NotEmpty(accessKey, "check if generated secret accessKey is set")
-		td.Require.NotEmpty(secret.Data[operator.AccessKeyFieldSecretKey], "check if generated secret secretKey is set")
+		td.Require.NotEmpty(secretKey, "check if generated secret secretKey is set")
+
 		_, err := td.Madmin.InfoServiceAccount(td.Ctx, accessKey)
 		td.Require.NoError(err, "check minio access key exists")
+
+		CheckCredentials(td, accessKey, secretKey)
 	})
 
 	t.Run("creates an ldap minio access key", func(t *testing.T) {
@@ -1943,12 +1977,16 @@ func TestMinioAccessKey(t *testing.T) {
 
 		secret := getGeneratedSecret(td, ak)
 		accessKey := string(secret.Data[operator.AccessKeyFieldAccessKey])
+		secretKey := string(secret.Data[operator.AccessKeyFieldSecretKey])
+
 		td.Require.Equal(ak.Spec.AccessKey, accessKey, "check if spec access key is set to generated secret accessKey")
 		td.Require.NotEmpty(accessKey, "check if generated secret accessKey is set")
-		td.Require.NotEmpty(secret.Data[operator.AccessKeyFieldSecretKey], "check if generated secret secretKey is set")
+		td.Require.NotEmpty(secretKey, "check if generated secret secretKey is set")
 
 		_, err := td.Madmin.InfoServiceAccount(td.Ctx, accessKey)
 		td.Require.NoError(err, "check if minio access key exists")
+
+		CheckCredentials(td, accessKey, secretKey)
 	})
 
 	t.Run("creates a minio access key with an explicit access key", func(t *testing.T) {
@@ -1963,10 +2001,38 @@ func TestMinioAccessKey(t *testing.T) {
 
 		secret := getGeneratedSecret(td, ak)
 		accessKey := string(secret.Data[operator.AccessKeyFieldAccessKey])
+		secretKey := string(secret.Data[operator.AccessKeyFieldSecretKey])
+
 		td.Require.Equal(accessKey, ak.Spec.AccessKey, "check generated secret access key matches")
 
 		_, err = td.Madmin.InfoServiceAccount(td.Ctx, accessKey)
 		td.Require.NoError(err, "check if minio access key exists")
+
+		CheckCredentials(td, accessKey, secretKey)
+	})
+
+	t.Run("creates a minio access key with an explicit access key via access key ref", func(t *testing.T) {
+		td := Setup(t)
+
+		ak := createBuiltinAccessKey(td)
+		ak.Spec.AccessKeyRef = v1.ResourceKeyRef{Name: builtinUserSecret.Name, Key: "AKAccessKey"}
+		err := td.Kube.Update(td.Ctx, ak)
+		td.Require.NoError(err, "update access key resource")
+
+		waitForReconcile(td, ak)
+
+		secret := getGeneratedSecret(td, ak)
+		accessKey := string(secret.Data[operator.AccessKeyFieldAccessKey])
+		secretKey := string(secret.Data[operator.AccessKeyFieldSecretKey])
+		expected := builtinUserSecret.StringData["AKAccessKey"]
+
+		td.Require.Equal(ak.Spec.AccessKey, expected, "set access key when reconciled")
+		td.Require.Equal(accessKey, expected, "check generated secret key matches")
+
+		_, err = td.Madmin.InfoServiceAccount(td.Ctx, accessKey)
+		td.Require.NoError(err, "check if minio access key exists")
+
+		CheckCredentials(td, accessKey, secretKey)
 	})
 
 	t.Run("creates a minio access key with an explicit secret key", func(t *testing.T) {
@@ -1980,8 +2046,13 @@ func TestMinioAccessKey(t *testing.T) {
 		waitForReconcile(td, ak)
 
 		secret := getGeneratedSecret(td, ak)
+		accessKey := string(secret.Data[operator.AccessKeyFieldAccessKey])
 		secretKey := string(secret.Data[operator.AccessKeyFieldSecretKey])
-		td.Require.Equal(secretKey, builtinUserSecret.StringData["SecretKey"], "check generated secret key matches")
+		expected := builtinUserSecret.StringData["SecretKey"]
+
+		td.Require.Equal(secretKey, expected, "check generated secret key matches")
+
+		CheckCredentials(td, accessKey, secretKey)
 	})
 
 	t.Run("creates a minio access key with a policy", func(t *testing.T) {
@@ -2160,8 +2231,13 @@ func TestMinioAccessKey(t *testing.T) {
 		waitForReconcile(td, ak)
 
 		secret := getGeneratedSecret(td, ak)
+		accessKey := string(secret.Data[operator.AccessKeyFieldAccessKey])
 		secretKey := string(secret.Data[operator.AccessKeyFieldSecretKey])
-		td.Require.Equal(secretKey, builtinUserSecret.StringData["SecretKey"], "check generated secret key matches")
+		expected := builtinUserSecret.StringData["SecretKey"]
+
+		td.Require.Equal(secretKey, expected, "check generated secret key matches")
+
+		CheckCredentials(td, accessKey, secretKey)
 	})
 
 	t.Run("resyncs access key when remote has different name", func(t *testing.T) {
@@ -2281,7 +2357,7 @@ func TestMinioAccessKey(t *testing.T) {
 		ak := createBuiltinAccessKey(td)
 		waitForReconcile(td, ak)
 
-		accessKey := ak.Spec.AccessKey
+		eAccessKey := ak.Spec.AccessKey
 
 		secret := getGeneratedSecret(td, ak)
 		err := td.Kube.Delete(td.Ctx, secret)
@@ -2299,7 +2375,9 @@ func TestMinioAccessKey(t *testing.T) {
 		})
 
 		secret = getGeneratedSecret(td, ak)
-		td.Require.Equal(accessKey, string(secret.Data[operator.AccessKeyFieldAccessKey]), "regenerated secret reuses access key")
+		accessKey := string(secret.Data[operator.AccessKeyFieldAccessKey])
+
+		td.Require.Equal(eAccessKey, accessKey, "regenerated secret reuses access key")
 	})
 
 	t.Run("regenerates generated secret when using a new secret name", func(t *testing.T) {
@@ -2315,6 +2393,7 @@ func TestMinioAccessKey(t *testing.T) {
 		waitForReconcile(td, ak)
 
 		secret := getGeneratedSecret(td, ak)
+
 		td.Require.Equal(ak.Spec.SecretName, secret.GetName(), "check if generated secret name matches")
 
 		err = td.Kube.Get(td.Ctx, types.NamespacedName{Namespace: ak.GetNamespace(), Name: oldSecretName}, &corev1.Secret{})

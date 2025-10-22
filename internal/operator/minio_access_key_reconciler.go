@@ -584,8 +584,23 @@ func (r *minioAccessKeyReconciler) getDesiredCredentials(ctx context.Context, ak
 	creds := minioAccessKeyCredentials{}
 
 	// determine the desired access key
-	// check if access key is defined in the spec
+	// check if access key is defined explicitly in the spec
 	creds.AccessKey = ak.Spec.AccessKey
+	if creds.AccessKey == "" && ak.Spec.AccessKeyRef != (v1.ResourceKeyRef{}) {
+		// access key is defined via a ref in the spec
+		secret := &corev1.Secret{}
+		akr := ak.Spec.AccessKeyRef.SetDefaultNamespace(ak.GetNamespace())
+		err := r.Get(ctx, types.NamespacedName{Namespace: akr.Namespace, Name: akr.Name}, secret)
+		if err != nil {
+			return nil, err
+		}
+		bAccessKey, ok := secret.Data[ak.Spec.AccessKeyRef.Key]
+		if !ok {
+			err = fmt.Errorf("access key ref has no key %s", ak.Spec.AccessKeyRef.Key)
+			return nil, err
+		}
+		creds.AccessKey = string(bAccessKey)
+	}
 	if creds.AccessKey == "" && current != nil {
 		// access key is auto-generated - use access key from existing generated secret
 		creds.AccessKey = current.AccessKey

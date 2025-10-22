@@ -88,8 +88,14 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 				return failure(err)
 			}
 
+			l.Info("get access key")
+			accessKey, err := r.getAccessKey(ctx, *u.Status.CurrentSpec, u.GetNamespace())
+			if err != nil {
+				return failure(err)
+			}
+
 			l.Info("delete minio user")
-			err = mtac.RemoveUser(ctx, u.Status.CurrentSpec.AccessKey)
+			err = mtac.RemoveUser(ctx, accessKey)
 			err = ignoreMadminErrorCode(err, "XMinioAdminNoSuchUser")
 			if err != nil {
 				return failure(err)
@@ -149,8 +155,14 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 			return failure(err)
 		}
 
+		l.Info("get access key")
+		accessKey, err := r.getAccessKey(ctx, *u.Status.CurrentSpec, u.GetNamespace())
+		if err != nil {
+			return failure(err)
+		}
+
 		l.Info("get minio user")
-		_, err = mtac.GetUserInfo(ctx, u.Status.CurrentSpec.AccessKey)
+		_, err = mtac.GetUserInfo(ctx, accessKey)
 		e := !isMadminErrorCode(err, "XMinioAdminNoSuchUser")
 		err = ignoreMadminErrorCode(err, "XMinioAdminNoSuchUser")
 		if err != nil {
@@ -177,7 +189,7 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 		if us.GetResourceVersion() != u.Status.CurrentSecretKeyRefResourceVersion {
 			l.Info("update user (secret key ref change)")
 			usk := string(us.Data[u.Status.CurrentSpec.SecretKeyRef.Key])
-			err = mtac.AddUser(ctx, u.Status.CurrentSpec.AccessKey, usk)
+			err = mtac.AddUser(ctx, accessKey, usk)
 			if err != nil {
 				return failure(err)
 			}
@@ -207,11 +219,17 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 			return failure(err)
 		}
 
+		l.Info("get access key")
+		accessKey, err := r.getAccessKey(ctx, u.Spec, u.GetNamespace())
+		if err != nil {
+			return failure(err)
+		}
+
 		l.Info("get minio user")
-		_, err = mtac.GetUserInfo(ctx, u.Spec.AccessKey)
+		_, err = mtac.GetUserInfo(ctx, accessKey)
 		exists := err == nil
 		if exists && !u.Spec.Migrate {
-			err = fmt.Errorf("user %s already exists", u.Spec.AccessKey)
+			err = fmt.Errorf("user %s already exists", accessKey)
 		}
 		err = ignoreMadminErrorCode(err, "XMinioAdminNoSuchUser")
 		if err != nil {
@@ -228,12 +246,13 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 		usk := string(us.Data[u.Spec.SecretKeyRef.Key])
 
 		l.Info("create minio user")
-		err = mtac.AddUser(ctx, u.Spec.AccessKey, usk)
+		err = mtac.AddUser(ctx, accessKey, usk)
 		if err != nil {
 			return failure(err)
 		}
 
 		l.Info("set status")
+		u.Spec.AccessKey = accessKey
 		u.Spec.Migrate = false
 		u.Status.CurrentSpec = &u.Spec
 		u.Status.CurrentSecretKeyRefResourceVersion = us.GetResourceVersion()
@@ -246,4 +265,40 @@ func (r *minioUserReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 	}
 
 	return success()
+}
+
+// Resolves the access key for the given spec.
+// Returns an error if the access key cannot be resolved.
+func (r *minioUserReconciler) getAccessKey(ctx context.Context, spec v1.MinioUserSpec, defaultNamespace string) (string, error) {
+	accessKey := ""
+
+	if spec.AccessKey != "" {
+		// access key is explicitly defined
+		accessKey = spec.AccessKey
+	}
+
+	if accessKey == "" && spec.AccessKeyRef != (v1.ResourceKeyRef{}) {
+		// access key is defined via resource ref
+		secret := &corev1.Secret{}
+		akr := spec.AccessKeyRef.SetDefaultNamespace(defaultNamespace)
+		err := r.Get(ctx, types.NamespacedName{Namespace: akr.Namespace, Name: akr.Name}, secret)
+		if err != nil {
+			return "", err
+		}
+
+		bAccessKey, ok := secret.Data[akr.Key]
+		if !ok {
+			err = fmt.Errorf("secret key '%s' does not exist", akr.Key)
+			return "", err
+		}
+		accessKey = string(bAccessKey)
+	}
+
+	if accessKey == "" {
+		// access key not defined
+		err := fmt.Errorf("could not determine access key")
+		return "", err
+	}
+
+	return accessKey, nil
 }
