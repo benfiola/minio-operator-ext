@@ -13,6 +13,7 @@ helmCharts:
         configuration:
           name: tenant-configuration-env
         exposeServices:
+          console: true
           minio: true
         name: tenant
         pools:

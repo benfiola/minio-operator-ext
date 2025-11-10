@@ -42,7 +42,6 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -168,7 +167,7 @@ func Setup(t testing.TB) TestData {
 	for _, r := range testObjects {
 		nr := r.DeepCopyObject().(client.Object)
 		err := k.Get(ctx, client.ObjectKeyFromObject(nr), nr)
-		if err != nil && apierrors.IsNotFound(err) {
+		if err != nil && errors.IsNotFound(err) {
 			continue
 		}
 		require.NoError(err, "fetch existing testing k8s resource")
@@ -176,7 +175,7 @@ func Setup(t testing.TB) TestData {
 		err = k.Update(ctx, nr)
 		require.NoError(err, "remove finalizers from testing k8s resource")
 		err = k.Delete(ctx, nr)
-		if err != nil && apierrors.IsNotFound(err) {
+		if err != nil && errors.IsNotFound(err) {
 			err = nil
 		}
 		require.NoError(err, "delete testing k8s resource")
@@ -454,7 +453,7 @@ func WaitForDelete(td TestData, o client.Object) {
 		if err == nil {
 			return nil
 		}
-		if apierrors.IsNotFound(err) {
+		if errors.IsNotFound(err) {
 			err = nil
 		}
 		td.Require.NoError(err, "fetch object while waiting for object to be deleted")
@@ -771,7 +770,32 @@ func TestMinioBucket(t *testing.T) {
 		td.Require.True(vc.Enabled())
 	})
 
-	t.Run("corrects bucket versioning config drift", func(t *testing.T) {
+	t.Run("corrects bucket versioning config drift (local is nil)", func(t *testing.T) {
+		td := Setup(t)
+
+		b := createBucket(td)
+		err := td.Kube.Update(td.Ctx, b)
+		td.Require.NoError(err, "update bucket")
+		waitForReconcile(td, b)
+
+		err = td.Minio.SetBucketVersioning(td.Ctx, b.Spec.Name, minio.BucketVersioningConfiguration{
+			Status: "Enabled",
+		})
+		td.Require.NoError(err, "update minio bucket")
+
+		RunOperatorUntil(td, func() error {
+			vc, err := td.Minio.GetBucketVersioning(td.Ctx, b.Spec.Name)
+			if err != nil {
+				return err
+			}
+			if vc.Enabled() {
+				return nil
+			}
+			return StopIteration{}
+		})
+	})
+
+	t.Run("corrects bucket versioning config drift (local is not nil)", func(t *testing.T) {
 		td := Setup(t)
 
 		b := createBucket(td)
@@ -847,11 +871,41 @@ func TestMinioBucket(t *testing.T) {
 		td.Require.True(lc.Rules[0].Expiration.Days == 1)
 	})
 
-	t.Run("corrects bucket lifecycle config drift", func(t *testing.T) {
+	t.Run("corrects bucket lifecycle config drift (local is nil)", func(t *testing.T) {
 		td := Setup(t)
 
 		b := createBucket(td)
+		err := td.Kube.Update(td.Ctx, b)
+		td.Require.NoError(err, "update bucket")
 
+		waitForReconcile(td, b)
+
+		lc := lifecycle.NewConfiguration()
+		lc.Rules = []lifecycle.Rule{{
+			Expiration: lifecycle.Expiration{
+				Days: 1,
+			},
+			Status: "Enabled",
+		}}
+		err = td.Minio.SetBucketLifecycle(td.Ctx, b.Spec.Name, lc)
+		td.Require.NoError(err, "update minio bucket")
+
+		RunOperatorUntil(td, func() error {
+			lc, err := td.Minio.GetBucketLifecycle(td.Ctx, b.Spec.Name)
+			if err != nil {
+				return err
+			}
+			if len(lc.Rules) != 0 {
+				return nil
+			}
+			return StopIteration{}
+		})
+	})
+
+	t.Run("corrects bucket lifecycle config drift (local is not nil)", func(t *testing.T) {
+		td := Setup(t)
+
+		b := createBucket(td)
 		b.Spec.Lifecycle = &v1.MinioBucketLifecycleConfiguration{
 			Rules: []v1.MinioBucketLifecycleRule{{
 				Expiration: v1.MinioBucketLifecycleExpiration{

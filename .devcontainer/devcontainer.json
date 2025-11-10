@@ -16,6 +16,7 @@
         "editor.defaultFormatter": "esbenp.prettier-vscode",
         "go.testFlags": ["-v", "-count=1"],
         "go.testTimeout": "300s",
+        "exp-vscode-go.testExplorer.enable": true,
         "launch": {
           "version": "0.2.0",
           "configurations": [

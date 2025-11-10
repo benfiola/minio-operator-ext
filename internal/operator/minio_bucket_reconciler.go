@@ -183,10 +183,15 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 			l.Info("bucket versioning configuration changed (status and remote differ)")
 
 			l.Info("set bucket versioning configuration")
-			bvc = minioclient.BucketVersioningConfiguration{}
-			err = convertViaXML(b.Status.CurrentSpec.Versioning, &bvc)
-			if err != nil {
-				return failure(err)
+			// NOTE: if remote has a bucket versioning configuration, by default status must be set to 'Suspended' and overwritten with spec's configuration
+			bvc = minioclient.BucketVersioningConfiguration{
+				Status: "Suspended",
+			}
+			if b.Status.CurrentSpec.Versioning != nil {
+				err = convertViaXML(b.Status.CurrentSpec.Versioning, &bvc)
+				if err != nil {
+					return failure(err)
+				}
 			}
 			err = mtc.SetBucketVersioning(ctx, b.Status.CurrentSpec.Name, bvc)
 			if err != nil {
@@ -197,10 +202,15 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 			l.Info("bucket versioning configuration changed (status and spec differ)")
 
 			l.Info("set bucket versioning configuration")
-			bvc = minioclient.BucketVersioningConfiguration{}
-			err = convertViaXML(b.Spec.Versioning, &bvc)
-			if err != nil {
-				return failure(err)
+			// NOTE: if remote has a bucket versioning configuration, by default status must be set to 'Suspended' and overwritten with spec's configuration
+			bvc = minioclient.BucketVersioningConfiguration{
+				Status: "Suspended",
+			}
+			if b.Spec.Versioning != nil {
+				err = convertViaXML(b.Spec.Versioning, &bvc)
+				if err != nil {
+					return failure(err)
+				}
 			}
 			err = mtc.SetBucketVersioning(ctx, b.Status.CurrentSpec.Name, bvc)
 			if err != nil {
@@ -233,12 +243,14 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 			l.Info("bucket lifecycle configuration changed (status and remote differ)")
 
 			l.Info("set bucket lifecycle configuration")
-			blc = &lifecycle.Configuration{}
-			err = convertViaXML(b.Status.CurrentSpec.Lifecycle, blc)
-			if err != nil {
-				return failure(err)
+			var blc lifecycle.Configuration
+			if b.Status.CurrentSpec.Lifecycle != nil {
+				err = convertViaXML(b.Status.CurrentSpec.Lifecycle, &blc)
+				if err != nil {
+					return failure(err)
+				}
 			}
-			err = mtc.SetBucketLifecycle(ctx, b.Status.CurrentSpec.Name, blc)
+			err = mtc.SetBucketLifecycle(ctx, b.Status.CurrentSpec.Name, &blc)
 			if err != nil {
 				return failure(err)
 			}
@@ -247,12 +259,14 @@ func (r *minioBucketReconciler) Reconcile(ctx context.Context, req reconcile.Req
 			l.Info("bucket lifecycle configuration changed (status and spec differ)")
 
 			l.Info("set bucket lifecycle configuration")
-			blc = &lifecycle.Configuration{}
-			err = convertViaXML(b.Spec.Lifecycle, blc)
-			if err != nil {
-				return failure(err)
+			var blc lifecycle.Configuration
+			if b.Spec.Lifecycle != nil {
+				err = convertViaXML(b.Spec.Lifecycle, &blc)
+				if err != nil {
+					return failure(err)
+				}
 			}
-			err = mtc.SetBucketLifecycle(ctx, b.Status.CurrentSpec.Name, blc)
+			err = mtc.SetBucketLifecycle(ctx, b.Status.CurrentSpec.Name, &blc)
 			if err != nil {
 				return failure(err)
 			}
