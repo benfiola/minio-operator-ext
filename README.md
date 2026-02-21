@@ -1,5 +1,8 @@
 # minio-operator-ext
 
+> [!IMPORTANT]
+> Please read [this issue](https://github.com/benfiola/minio-operator-ext/issues/53) regarding the future of this project.
+
 The [MinIO Operator](https://github.com/minio/operator) currently is capable of deploying MinIO tenants - but does not expose any mechanisms by which one could declaratively manage resources within a MinIO tenant.
 
 This repo extends the MinIO Operator (i.e., minio-operator-ext(ension)) - providing an additional [operator](./internal/operator/operator.go) and [CRDs](./charts/crds/templates/crds.yaml) that allow one to declaratiely manage users, buckets, policies and policy bindings.
